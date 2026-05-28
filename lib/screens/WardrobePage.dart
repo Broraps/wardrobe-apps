@@ -94,6 +94,137 @@ class _WardrobePageState extends State<WardrobePage> {
     );
   }
 
+  // ── EDIT ───────────────────────────────────────────────────────────────────
+  Future<void> _showEditDialog(ClothingItem item) async {
+    if (!item.isLocal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Item cloud tidak bisa diedit. Hanya item lokal yang bisa diubah.'),
+        ),
+      );
+      return;
+    }
+
+    final nameController = TextEditingController(text: item.name);
+    final categories = ['Top', 'Bottom', 'Outer', 'Shoes'];
+    final seasons = ['Winter', 'Summer', 'Spring', 'Autumn'];
+    String selectedCategory = categories.contains(item.category)
+        ? item.category
+        : categories.first;
+    String selectedSeason = seasons.contains(item.season)
+        ? item.season
+        : seasons.first;
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Item'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nama Barang',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedCategory,
+                      decoration: const InputDecoration(
+                        labelText: 'Kategori',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: categories
+                          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() => selectedCategory = val);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedSeason,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipe Musim',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: seasons
+                          .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() => selectedSeason = val);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    final name = nameController.text.trim();
+                    if (name.isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Nama tidak boleh kosong')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(ctx, {
+                      'name': name,
+                      'category': selectedCategory,
+                      'season': selectedSeason,
+                    });
+                  },
+                  child: const Text('Simpan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) return;
+
+    try {
+      final updated = item.copyWith(
+        name: result['name'],
+        category: result['category'],
+        season: result['season'],
+      );
+      await _catalogService.updateLocalItem(updated);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${updated.name}" berhasil diperbarui')),
+        );
+        _refresh();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memperbarui: $e')),
+        );
+      }
+    }
+  }
+
   // ── DELETE ─────────────────────────────────────────────────────────────────
   Future<void> _confirmDelete(ClothingItem item) async {
     final confirmed = await showDialog<bool>(
@@ -290,6 +421,24 @@ class _WardrobePageState extends State<WardrobePage> {
             top: 8,
             left: 8,
             child: _SourceBadge(isLocal: item.isLocal),
+          ),
+
+          // ── Tombol Edit (kanan atas) ──
+          Positioned(
+            top: 4,
+            right: 36,
+            child: Material(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () => _showEditDialog(item),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.edit, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
           ),
 
           // ── Tombol Hapus (kanan atas) ──

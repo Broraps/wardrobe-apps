@@ -51,6 +51,23 @@ class ClothingItem {
     );
   }
 
+  // Buat salinan dengan field yang diubah
+  ClothingItem copyWith({
+    String? name,
+    String? category,
+    String? season,
+  }) {
+    return ClothingItem(
+      id: id,
+      name: name ?? this.name,
+      category: category ?? this.category,
+      color: color,
+      imageUrl: imageUrl,
+      season: season ?? this.season,
+      isLocal: isLocal,
+    );
+  }
+
   // Konversi ke Map untuk disimpan di SharedPreferences
   Map<String, dynamic> toLocalJson() {
     return {

@@ -105,6 +105,17 @@ class CatalogService {
     if (await file.exists()) await file.delete();
   }
 
+  // ── Update item lokal yang sudah ada (nama, kategori, musim) ──────────────
+  Future<void> updateLocalItem(ClothingItem updatedItem) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await getLocalItems();
+    final index = current.indexWhere((item) => item.id == updatedItem.id);
+    if (index == -1) return; // item tidak ditemukan
+    current[index] = updatedItem;
+    final encoded = jsonEncode(current.map((e) => e.toLocalJson()).toList());
+    await prefs.setString(_localItemsKey, encoded);
+  }
+
   // ── 4. GALLERY: Gabung cloud (yg dipilih) + lokal ─────────────────────────
   // Dipakai di WardrobePage
   Future<List<ClothingItem>> fetchGallery() async {
