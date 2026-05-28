@@ -74,9 +74,9 @@ class _RandomizerViewState extends State<RandomizerView> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memuat gallery: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal memuat gallery: $e')));
       }
     }
   }
@@ -259,8 +259,185 @@ class _RandomizerViewState extends State<RandomizerView> {
 }
 
 // --- 1.2 Tampilan Canvas ---
-class CanvasView extends StatelessWidget {
+class CanvasView extends StatefulWidget {
   const CanvasView({super.key});
+
+  @override
+  State<CanvasView> createState() => _CanvasViewState();
+}
+
+class _CanvasItemData {
+  final ClothingItem item;
+  Offset position;
+
+  _CanvasItemData({required this.item, required this.position});
+}
+
+class _CanvasViewState extends State<CanvasView> {
+  final CatalogService _catalogService = CatalogService();
+  final List<_CanvasItemData> _canvasItems = [];
+
+  // ── Buka bottom sheet untuk pilih item dari wardrobe ────────────────────
+  Future<void> _showItemPicker() async {
+    List<ClothingItem> wardrobeItems = [];
+    bool isLoading = true;
+    String? errorMsg;
+
+    try {
+      wardrobeItems = await _catalogService.fetchGallery();
+    } catch (e) {
+      errorMsg = e.toString();
+    }
+    isLoading = false;
+
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.55,
+          minChildSize: 0.3,
+          maxChildSize: 0.85,
+          builder: (_, scrollController) {
+            return Column(
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Pilih Item untuk Canvas',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Ketuk item untuk menambahkan ke canvas',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : errorMsg != null
+                      ? Center(child: Text('Error: $errorMsg'))
+                      : wardrobeItems.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'Lemari masih kosong.\nTambah item di tab Wardrobe dulu.',
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : GridView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(12),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                childAspectRatio: 0.75,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                              ),
+                          itemCount: wardrobeItems.length,
+                          itemBuilder: (context, index) {
+                            final item = wardrobeItems[index];
+                            return _buildPickerCard(ctx, item);
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPickerCard(BuildContext ctx, ClothingItem item) {
+    final isLocalImage = !item.imageUrl.startsWith('http');
+    return GestureDetector(
+      onTap: () {
+        // Tambahkan item ke canvas di posisi tengah
+        setState(() {
+          _canvasItems.add(
+            _CanvasItemData(
+              item: item,
+              position: Offset(
+                80 + (_canvasItems.length * 20.0) % 120,
+                60 + (_canvasItems.length * 30.0) % 200,
+              ),
+            ),
+          );
+        });
+        Navigator.pop(ctx);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${item.name}" ditambahkan ke canvas'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      },
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: isLocalImage
+                  ? Image.file(
+                      File(item.imageUrl),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const Center(child: Icon(Icons.broken_image)),
+                    )
+                  : Image.network(
+                      item.imageUrl,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (_, child, progress) {
+                        if (progress == null) return child;
+                        return const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        );
+                      },
+                      errorBuilder: (_, __, ___) =>
+                          const Center(child: Icon(Icons.broken_image)),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: Text(
+                item.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Hapus item dari canvas ─────────────────────────────────────────────
+  void _removeFromCanvas(int index) {
+    setState(() => _canvasItems.removeAt(index));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -269,23 +446,33 @@ class CanvasView extends StatelessWidget {
         // Latar Belakang Canvas
         Container(color: Colors.grey.shade100),
 
-        // Contoh Item yang bisa digeser (Nanti pakai Logic DragTarget)
-        const Positioned(
-          top: 50,
-          left: 100,
-          child: DraggableItem(label: "Atasan", color: Colors.blue),
-        ),
-        const Positioned(
-          top: 200,
-          left: 120,
-          child: DraggableItem(label: "Bawahan", color: Colors.green),
-        ),
+        // Hint jika canvas kosong
+        if (_canvasItems.isEmpty)
+          const Center(
+            child: Text(
+              'Tekan "Add Item" untuk menambahkan\npakaian ke canvas',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+          ),
+
+        // Item-item di canvas (bisa digeser)
+        for (int i = 0; i < _canvasItems.length; i++)
+          _CanvasItemWidget(
+            key: ValueKey('${_canvasItems[i].item.id}_$i'),
+            data: _canvasItems[i],
+            onPositionChanged: (newPos) {
+              _canvasItems[i].position = newPos;
+            },
+            onDelete: () => _removeFromCanvas(i),
+          ),
 
         // Tombol Simpan
         Positioned(
           bottom: 20,
           right: 20,
           child: FloatingActionButton(
+            heroTag: 'canvas_save',
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text("Outfit disimpan ke Lookbook!")),
@@ -294,11 +481,14 @@ class CanvasView extends StatelessWidget {
             child: const Icon(Icons.save),
           ),
         ),
+
+        // Tombol Add Item
         Positioned(
           bottom: 20,
           left: 20,
           child: FloatingActionButton.extended(
-            onPressed: () {},
+            heroTag: 'canvas_add',
+            onPressed: _showItemPicker,
             label: const Text("Add Item"),
             icon: const Icon(Icons.add),
             backgroundColor: Colors.white,
@@ -309,34 +499,129 @@ class CanvasView extends StatelessWidget {
   }
 }
 
-class DraggableItem extends StatelessWidget {
-  final String label;
-  final Color color;
-  const DraggableItem({super.key, required this.label, required this.color});
+// ── Widget item di canvas (draggable dengan gambar asli) ──────────────────────
+class _CanvasItemWidget extends StatefulWidget {
+  final _CanvasItemData data;
+  final ValueChanged<Offset> onPositionChanged;
+  final VoidCallback onDelete;
+
+  const _CanvasItemWidget({
+    super.key,
+    required this.data,
+    required this.onPositionChanged,
+    required this.onDelete,
+  });
+
+  @override
+  State<_CanvasItemWidget> createState() => _CanvasItemWidgetState();
+}
+
+class _CanvasItemWidgetState extends State<_CanvasItemWidget> {
+  late Offset _position;
+
+  @override
+  void initState() {
+    super.initState();
+    _position = widget.data.position;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Draggable(
-      feedback: _buildBox(true),
-      childWhenDragging: Container(), // Kosong saat di-drag
-      child: _buildBox(false),
-    );
-  }
+    final item = widget.data.item;
+    final isLocalImage = !item.imageUrl.startsWith('http');
 
-  Widget _buildBox(bool isDragging) {
-    return Container(
-      width: 120,
-      height: 120,
-      decoration: BoxDecoration(
-        color: color.withOpacity(isDragging ? 0.7 : 1),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          if (!isDragging)
-            BoxShadow(color: Colors.black26, blurRadius: 4, spreadRadius: 1),
-        ],
-      ),
-      child: Center(
-        child: Text(label, style: const TextStyle(color: Colors.white)),
+    return Positioned(
+      left: _position.dx,
+      top: _position.dy,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            _position += details.delta;
+          });
+          widget.onPositionChanged(_position);
+        },
+        child: Container(
+          width: 120,
+          height: 140,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: item.color, width: 2),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // Gambar item
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 120,
+                  height: 140,
+                  child: isLocalImage
+                      ? Image.file(
+                          File(item.imageUrl),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Center(child: Icon(Icons.broken_image)),
+                        )
+                      : Image.network(
+                          item.imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Center(child: Icon(Icons.broken_image)),
+                        ),
+                ),
+              ),
+              // Label nama di bawah
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ),
+              ),
+              // Tombol hapus
+              Positioned(
+                top: 2,
+                right: 2,
+                child: GestureDetector(
+                  onTap: widget.onDelete,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
