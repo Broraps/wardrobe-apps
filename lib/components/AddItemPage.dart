@@ -74,18 +74,18 @@ class _AddItemPageState extends State<AddItemPage> {
         _isLoading = true;
       });
 
-      // 1. Deteksi Warna Dulu
-      await _extractDominantColor(_imageFile!);
+      // 1. Deteksi Warna Dulu — mengembalikan warna yang terdeteksi
+      final detectedColor = await _extractDominantColor(_imageFile!);
 
-      // 2. Deteksi Objek & Isi Form Otomatis (BARU)
-      await _autoFillData(_imageFile!);
+      // 2. Deteksi Objek & Isi Form Otomatis — pass warna langsung
+      await _autoFillData(_imageFile!, detectedColor);
 
       setState(() => _isLoading = false);
     }
   }
 
   // 2. FUNGSI CERDAS: DETEKSI WARNA (Palette Generator)
-  Future<void> _extractDominantColor(File image) async {
+  Future<Color> _extractDominantColor(File image) async {
     final PaletteGenerator generator = await PaletteGenerator.fromImageProvider(
       FileImage(image),
       size: const Size(200, 200), // Resize biar cepat prosesnya
@@ -93,16 +93,16 @@ class _AddItemPageState extends State<AddItemPage> {
     );
 
     // Ambil warna dominan, kalau gagal ambil warna vibrant
-    Color? picked =
-        generator.dominantColor?.color ?? generator.vibrantColor?.color;
+    Color picked =
+        generator.dominantColor?.color ?? generator.vibrantColor?.color ?? Colors.grey;
 
-    if (picked != null) {
-      setState(() {
-        _detectedColor = picked;
-        // Ubah ke format Hex String untuk Database (cth: 0xFF123456)
-        _hexColorString = '0x${picked.value.toRadixString(16).toUpperCase()}';
-      });
-    }
+    setState(() {
+      _detectedColor = picked;
+      // Ubah ke format Hex String untuk Database (cth: 0xFF123456)
+      _hexColorString = '0x${picked.toARGB32().toRadixString(16).toUpperCase()}';
+    });
+
+    return picked;
   }
 
   // 3. SIMPAN ITEM LOKAL ke SharedPreferences (bukan ke Supabase)
@@ -155,7 +155,7 @@ class _AddItemPageState extends State<AddItemPage> {
     }
   }
 
-  Future<void> _autoFillData(File image) async {
+  Future<void> _autoFillData(File image, Color colorForSeason) async {
     // 1. Siapkan Labeler
     final InputImage inputImage = InputImage.fromFile(image);
     final ImageLabelerOptions options = ImageLabelerOptions(
@@ -214,8 +214,8 @@ class _AddItemPageState extends State<AddItemPage> {
         // Pilih Kategori di Dropdown
         _selectedCategory = detectedCategory;
 
-        // Tebak Musim dari Warna yang sudah dideteksi sebelumnya (_detectedColor)
-        _selectedSeason = _guessSeasonFromColor(_detectedColor);
+        // Tebak Musim dari warna yang di-pass langsung (bukan dari state)
+        _selectedSeason = _guessSeasonFromColor(colorForSeason);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(

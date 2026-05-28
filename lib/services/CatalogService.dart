@@ -44,8 +44,8 @@ class CatalogService {
         );
       }).toList();
     } catch (e) {
-      print('Error fetching storage files: $e');
-      return [];
+      debugPrint('Error fetching storage files: $e');
+      rethrow; // Biarkan caller menangani error dan menampilkan feedback ke user
     }
   }
 
@@ -123,8 +123,9 @@ class CatalogService {
 
       return [...cloudItems, ...localItems];
     } catch (e) {
-      print('Error fetching gallery: $e');
-      return await getLocalItems();
+      debugPrint('Error fetching gallery: $e');
+      rethrow; // Biarkan caller menangani error dan menampilkan feedback ke user
     }
   }
 }
+

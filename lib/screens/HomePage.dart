@@ -65,11 +65,20 @@ class _RandomizerViewState extends State<RandomizerView> {
 
   // Tarik semua baju dari HP/Supabase saat halaman dibuka
   Future<void> _loadWardrobe() async {
-    final items = await _catalogService.fetchGallery();
-    setState(() {
-      _myWardrobe = items;
-      _isLoading = false;
-    });
+    try {
+      final items = await _catalogService.fetchGallery();
+      setState(() {
+        _myWardrobe = items;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memuat gallery: $e')),
+        );
+      }
+    }
   }
 
   // FUNGSI SAAT TOMBOL DADU DITEKAN

@@ -27,12 +27,20 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   Future<void> _loadData() async {
-    final items = await _service.fetchAllCloudItems();
-    final ids = await _service.getGalleryCloudIds();
-    setState(() {
-      _allCloudItems = items;
-      _galleryIds = ids;
-    });
+    try {
+      final items = await _service.fetchAllCloudItems();
+      final ids = await _service.getGalleryCloudIds();
+      setState(() {
+        _allCloudItems = items;
+        _galleryIds = ids;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memuat katalog: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _toggleItem(ClothingItem item) async {
@@ -50,14 +58,18 @@ class _CatalogPageState extends State<CatalogPage> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: true,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop && _changed) {
-          Navigator.pop(context, true); // Signal ke WardrobePage untuk refresh
+        if (!didPop) {
+          Navigator.pop(context, _changed ? true : null);
         }
       },
       child: Scaffold(
         appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context, _changed ? true : null),
+          ),
           title: const Text('Katalog Cloud'),
           actions: [
             Padding(

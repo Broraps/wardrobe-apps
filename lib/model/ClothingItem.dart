@@ -19,13 +19,19 @@ class ClothingItem {
     this.isLocal = false,
   });
 
+  /// Parse hex color string yang mungkin berbentuk '0xFFAABBCC' atau 'FFAABBCC'
+  static Color _parseHexColor(String hex) {
+    String cleaned = hex.replaceFirst(RegExp(r'^0x', caseSensitive: false), '');
+    return Color(int.parse(cleaned, radix: 16));
+  }
+
   // Factory: dari JSON Supabase (selalu cloud)
   factory ClothingItem.fromJson(Map<String, dynamic> json) {
     return ClothingItem(
       id: json['id'],
       name: json['name'],
       category: json['category'],
-      color: Color(int.parse(json['hex_color'])),
+      color: _parseHexColor(json['hex_color'].toString()),
       imageUrl: json['image_url'],
       season: json['season'] ?? 'Unknown',
       isLocal: false,
@@ -38,7 +44,7 @@ class ClothingItem {
       id: json['id'],
       name: json['name'],
       category: json['category'],
-      color: Color(int.parse(json['hex_color'])),
+      color: _parseHexColor(json['hex_color'].toString()),
       imageUrl: json['image_url'],
       season: json['season'] ?? 'Unknown',
       isLocal: true,
@@ -51,7 +57,7 @@ class ClothingItem {
       'id': id,
       'name': name,
       'category': category,
-      'hex_color': '0x${color.value.toRadixString(16).toUpperCase()}',
+      'hex_color': '0x${color.toARGB32().toRadixString(16).toUpperCase()}',
       'image_url': imageUrl,
       'season': season,
     };
