@@ -56,12 +56,13 @@ class ClothingItem {
     String? name,
     String? category,
     String? season,
+    Color? color,
   }) {
     return ClothingItem(
       id: id,
       name: name ?? this.name,
       category: category ?? this.category,
-      color: color,
+      color: color ?? this.color,
       imageUrl: imageUrl,
       season: season ?? this.season,
       isLocal: isLocal,

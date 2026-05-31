@@ -1,9 +1,16 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../model/ClothingItem.dart';
+import '../model/LookbookItem.dart';
 import '../services/CatalogService.dart';
+import '../services/LookbookService.dart';
 import '../services/SmartStylistService.dart';
 
 class HomePage extends StatelessWidget {
@@ -26,7 +33,7 @@ class HomePage extends StatelessWidget {
         body: const TabBarView(
           children: [
             RandomizerView(), // Sub-halaman 1.1
-            CanvasView(), // Sub-halaman 1.2
+            CanvasView(),     // Sub-halaman 1.2
           ],
         ),
       ),
@@ -34,7 +41,9 @@ class HomePage extends StatelessWidget {
   }
 }
 
-// --- 1.1 Tampilan Randomizer ---
+// ─────────────────────────────────────────────────────────────────────────────
+// 1.1 Tampilan Randomizer
+// ─────────────────────────────────────────────────────────────────────────────
 class RandomizerView extends StatefulWidget {
   const RandomizerView({super.key});
 
@@ -232,7 +241,7 @@ class _RandomizerViewState extends State<RandomizerView> {
             fit: BoxFit.cover,
             // Efek transparan biar teks label tetap terbaca
             colorFilter: ColorFilter.mode(
-              Colors.white.withOpacity(0.2),
+                Colors.white.withValues(alpha: 0.2),
               BlendMode.lighten,
             ),
           ),
@@ -243,11 +252,13 @@ class _RandomizerViewState extends State<RandomizerView> {
               bottom: 8,
               left: 8,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 color: Colors.black54,
                 child: Text(
                   "$label: ${item.name}",
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  style:
+                      const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),
             ),
@@ -258,7 +269,9 @@ class _RandomizerViewState extends State<RandomizerView> {
   }
 }
 
-// --- 1.2 Tampilan Canvas ---
+// ─────────────────────────────────────────────────────────────────────────────
+// 1.2 Tampilan Canvas DIY
+// ─────────────────────────────────────────────────────────────────────────────
 class CanvasView extends StatefulWidget {
   const CanvasView({super.key});
 
@@ -275,12 +288,18 @@ class _CanvasItemData {
 
 class _CanvasViewState extends State<CanvasView> {
   final CatalogService _catalogService = CatalogService();
+  final LookbookService _lookbookService = LookbookService();
   final List<_CanvasItemData> _canvasItems = [];
+
+  // Key untuk RepaintBoundary — dipakai saat screenshot canvas
+  final GlobalKey _canvasKey = GlobalKey();
+
+  // Flag untuk menyembunyikan tombol hapus saat screenshot
+  bool _isCapturing = false;
 
   // ── Buka bottom sheet untuk pilih item dari wardrobe ────────────────────
   Future<void> _showItemPicker() async {
     List<ClothingItem> wardrobeItems = [];
-    bool isLoading = true;
     String? errorMsg;
 
     try {
@@ -288,7 +307,6 @@ class _CanvasViewState extends State<CanvasView> {
     } catch (e) {
       errorMsg = e.toString();
     }
-    isLoading = false;
 
     if (!mounted) return;
 
@@ -319,7 +337,8 @@ class _CanvasViewState extends State<CanvasView> {
                 const SizedBox(height: 12),
                 const Text(
                   'Pilih Item untuk Canvas',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style:
+                      TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -328,33 +347,31 @@ class _CanvasViewState extends State<CanvasView> {
                 ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : errorMsg != null
+                  child: errorMsg != null
                       ? Center(child: Text('Error: $errorMsg'))
                       : wardrobeItems.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Lemari masih kosong.\nTambah item di tab Wardrobe dulu.',
-                            textAlign: TextAlign.center,
-                          ),
-                        )
-                      : GridView.builder(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(12),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
+                          ? const Center(
+                              child: Text(
+                                'Lemari masih kosong.\nTambah item di tab Wardrobe dulu.',
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : GridView.builder(
+                              controller: scrollController,
+                              padding: const EdgeInsets.all(12),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 3,
                                 childAspectRatio: 0.75,
                                 crossAxisSpacing: 8,
                                 mainAxisSpacing: 8,
                               ),
-                          itemCount: wardrobeItems.length,
-                          itemBuilder: (context, index) {
-                            final item = wardrobeItems[index];
-                            return _buildPickerCard(ctx, item);
-                          },
-                        ),
+                              itemCount: wardrobeItems.length,
+                              itemBuilder: (context, index) {
+                                final item = wardrobeItems[index];
+                                return _buildPickerCard(ctx, item);
+                              },
+                            ),
                 ),
               ],
             );
@@ -368,7 +385,6 @@ class _CanvasViewState extends State<CanvasView> {
     final isLocalImage = !item.imageUrl.startsWith('http');
     return GestureDetector(
       onTap: () {
-        // Tambahkan item ke canvas di posisi tengah
         setState(() {
           _canvasItems.add(
             _CanvasItemData(
@@ -390,7 +406,8 @@ class _CanvasViewState extends State<CanvasView> {
       },
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -439,50 +456,117 @@ class _CanvasViewState extends State<CanvasView> {
     setState(() => _canvasItems.removeAt(index));
   }
 
+  // ── Simpan canvas ke Lookbook ─────────────────────────────────────────
+  Future<void> _saveToLookbook() async {
+    if (_canvasItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Canvas masih kosong! Tambah item dulu.'),
+        ),
+      );
+      return;
+    }
+
+    // Sembunyikan tombol hapus agar tidak ikut ter-capture di screenshot
+    setState(() => _isCapturing = true);
+
+    // Tunggu frame berikutnya agar UI sempat rebuild tanpa tombol hapus
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _SaveLookbookSheet(
+        canvasKey: _canvasKey,
+        itemIds: _canvasItems.map((d) => d.item.id).toList(),
+        lookbookService: _lookbookService,
+      ),
+    );
+
+    // Tampilkan kembali tombol hapus setelah bottom sheet ditutup
+    if (mounted) setState(() => _isCapturing = false);
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Outfit tersimpan di Lookbook!'),
+          backgroundColor: Colors.deepPurple,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Latar Belakang Canvas
-        Container(color: Colors.grey.shade100),
+        // ── Canvas area (dibungkus RepaintBoundary untuk screenshot) ──
+        Positioned.fill(
+          child: RepaintBoundary(
+            key: _canvasKey,
+            child: Stack(
+              children: [
+                // Latar Belakang Canvas
+                Container(color: Colors.grey.shade100),
 
-        // Hint jika canvas kosong
-        if (_canvasItems.isEmpty)
-          const Center(
-            child: Text(
-              'Tekan "Add Item" untuk menambahkan\npakaian ke canvas',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 14),
+                // Hint jika canvas kosong
+                if (_canvasItems.isEmpty)
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.gesture,
+                          size: 60,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Tekan "Add Item" untuk menambahkan\npakaian ke canvas',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // Item-item di canvas (bisa digeser)
+                for (int i = 0; i < _canvasItems.length; i++)
+                  _CanvasItemWidget(
+                    key: ValueKey('${_canvasItems[i].item.id}_$i'),
+                    data: _canvasItems[i],
+                    hideDeleteButton: _isCapturing,
+                    onPositionChanged: (newPos) {
+                      _canvasItems[i].position = newPos;
+                    },
+                    onDelete: () => _removeFromCanvas(i),
+                  ),
+              ],
             ),
           ),
+        ),
 
-        // Item-item di canvas (bisa digeser)
-        for (int i = 0; i < _canvasItems.length; i++)
-          _CanvasItemWidget(
-            key: ValueKey('${_canvasItems[i].item.id}_$i'),
-            data: _canvasItems[i],
-            onPositionChanged: (newPos) {
-              _canvasItems[i].position = newPos;
-            },
-            onDelete: () => _removeFromCanvas(i),
-          ),
-
-        // Tombol Simpan
+        // ── Tombol Simpan ke Lookbook ─────────────────────────────────────
         Positioned(
           bottom: 20,
           right: 20,
           child: FloatingActionButton(
             heroTag: 'canvas_save',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Outfit disimpan ke Lookbook!")),
-              );
-            },
-            child: const Icon(Icons.save),
+            onPressed: _saveToLookbook,
+            backgroundColor: Colors.deepPurple,
+            foregroundColor: Colors.white,
+            tooltip: 'Simpan ke Lookbook',
+            child: const Icon(Icons.bookmark_add),
           ),
         ),
 
-        // Tombol Add Item
+        // ── Tombol Add Item ───────────────────────────────────────────────
         Positioned(
           bottom: 20,
           left: 20,
@@ -492,22 +576,51 @@ class _CanvasViewState extends State<CanvasView> {
             label: const Text("Add Item"),
             icon: const Icon(Icons.add),
             backgroundColor: Colors.white,
+            foregroundColor: Colors.deepPurple,
+            elevation: 4,
           ),
         ),
+
+        // ── Counter item di canvas ────────────────────────────────────────
+        if (_canvasItems.isNotEmpty)
+          Positioned(
+            top: 12,
+            right: 12,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_canvasItems.length} item',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
-// ── Widget item di canvas (draggable dengan gambar asli) ──────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Widget item di canvas (draggable dengan gambar asli)
+// ─────────────────────────────────────────────────────────────────────────────
 class _CanvasItemWidget extends StatefulWidget {
   final _CanvasItemData data;
+  final bool hideDeleteButton;
   final ValueChanged<Offset> onPositionChanged;
   final VoidCallback onDelete;
 
   const _CanvasItemWidget({
     super.key,
     required this.data,
+    this.hideDeleteButton = false,
     required this.onPositionChanged,
     required this.onDelete,
   });
@@ -548,7 +661,11 @@ class _CanvasItemWidgetState extends State<_CanvasItemWidget> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: item.color, width: 2),
             boxShadow: const [
-              BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1),
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 6,
+                spreadRadius: 1,
+              ),
             ],
           ),
           child: Stack(
@@ -595,32 +712,308 @@ class _CanvasItemWidgetState extends State<_CanvasItemWidget> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 10),
-                  ),
-                ),
-              ),
-              // Tombol hapus
-              Positioned(
-                top: 2,
-                right: 2,
-                child: GestureDetector(
-                  onTap: widget.onDelete,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.close,
+                    style: const TextStyle(
                       color: Colors.white,
-                      size: 14,
+                      fontSize: 10,
                     ),
                   ),
                 ),
               ),
+              // Tombol hapus (disembunyikan saat capture screenshot)
+              if (!widget.hideDeleteButton)
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: GestureDetector(
+                    onTap: widget.onDelete,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom Sheet: Form simpan ke Lookbook
+// ─────────────────────────────────────────────────────────────────────────────
+class _SaveLookbookSheet extends StatefulWidget {
+  final GlobalKey canvasKey;
+  final List<String> itemIds;
+  final LookbookService lookbookService;
+
+  const _SaveLookbookSheet({
+    required this.canvasKey,
+    required this.itemIds,
+    required this.lookbookService,
+  });
+
+  @override
+  State<_SaveLookbookSheet> createState() => _SaveLookbookSheetState();
+}
+
+class _SaveLookbookSheetState extends State<_SaveLookbookSheet> {
+  final _nameController = TextEditingController();
+  DateTime? _scheduledDate;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill nama dengan tanggal hari ini
+    _nameController.text =
+        'Outfit ${DateFormat('d MMM yyyy').format(DateTime.now())}';
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _scheduledDate ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 2),
+      helpText: 'Pilih Tanggal Pemakaian',
+      confirmText: 'Pilih',
+      cancelText: 'Batal',
+    );
+    if (picked != null) {
+      setState(() => _scheduledDate = picked);
+    }
+  }
+
+  Future<void> _save() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama outfit tidak boleh kosong!')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      // 1. Capture screenshot dari RepaintBoundary canvas
+      final boundary = widget.canvasKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) throw Exception('Canvas tidak ditemukan');
+
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+      final ByteData? byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) throw Exception('Gagal mengambil gambar canvas');
+      final Uint8List bytes = byteData.buffer.asUint8List();
+
+      // 2. Simpan file PNG ke direktori dokumen app
+      final dir = await getApplicationDocumentsDirectory();
+      final now = DateTime.now();
+      final timestamp = now.millisecondsSinceEpoch;
+      final fileName = 'lookbook_$timestamp.png';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      // 3. Buat & simpan LookbookItem (pakai timestamp yang sama)
+      final lookbookItem = LookbookItem(
+        id: 'lb_$timestamp',
+        name: name,
+        imagePath: file.path,
+        createdAt: now,
+        scheduledDate: _scheduledDate,
+        itemIds: widget.itemIds,
+      );
+      await widget.lookbookService.save(lookbookItem);
+
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      // Naik saat keyboard muncul
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Handle bar ──
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // ── Judul ──
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.bookmark_add,
+                    color: Colors.deepPurple,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Simpan ke Lookbook',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // ── Nama Outfit ──
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Nama Outfit',
+                hintText: 'cth: Casual Friday, Date Night...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.label_outline),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // ── Jadwalkan Tanggal (opsional) ──
+            InkWell(
+              onTap: _pickDate,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _scheduledDate != null
+                        ? Colors.deepPurple
+                        : Colors.grey.shade400,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  color: _scheduledDate != null
+                      ? Colors.deepPurple.withValues(alpha: 0.06)
+                      : null,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today,
+                      size: 20,
+                      color: _scheduledDate != null
+                          ? Colors.deepPurple
+                          : Colors.grey[600],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _scheduledDate == null
+                            ? 'Jadwalkan pemakaian (opsional)'
+                            : DateFormat('EEEE, d MMMM yyyy')
+                                .format(_scheduledDate!),
+                        style: TextStyle(
+                          color: _scheduledDate != null
+                              ? Colors.deepPurple
+                              : Colors.grey[600],
+                          fontWeight: _scheduledDate != null
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                    if (_scheduledDate != null)
+                      GestureDetector(
+                        onTap: () => setState(() => _scheduledDate = null),
+                        child: const Icon(
+                          Icons.close,
+                          size: 18,
+                          color: Colors.grey,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── Tombol Simpan ──
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'SIMPAN KE LOOKBOOK',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+              ),
+            ),
+          ],
         ),
       ),
     );

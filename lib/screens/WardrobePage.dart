@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../components/AddItemPage.dart';
+import '../components/ColorPickerDialog.dart';
 import '../model/ClothingItem.dart';
 import '../services/CatalogService.dart';
 import 'CatalogPage.dart';
@@ -114,8 +115,9 @@ class _WardrobePageState extends State<WardrobePage> {
     String selectedSeason = seasons.contains(item.season)
         ? item.season
         : seasons.first;
+    Color selectedColor = item.color;
 
-    final result = await showDialog<Map<String, String>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
@@ -165,6 +167,80 @@ class _WardrobePageState extends State<WardrobePage> {
                         }
                       },
                     ),
+                    const SizedBox(height: 16),
+
+                    // ── Warna Item ──
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () async {
+                              final picked = await ColorPickerDialog.show(
+                                ctx,
+                                selectedColor,
+                              );
+                              if (picked != null) {
+                                setDialogState(() {
+                                  selectedColor = picked;
+                                });
+                              }
+                            },
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: selectedColor,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    blurRadius: 2,
+                                    color: Colors.black26,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Warna Item',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () async {
+                              final picked = await ColorPickerDialog.show(
+                                ctx,
+                                selectedColor,
+                              );
+                              if (picked != null) {
+                                setDialogState(() {
+                                  selectedColor = picked;
+                                });
+                              }
+                            },
+                            icon: const Icon(Icons.palette, size: 16),
+                            label: const Text('Ubah'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.deepPurple,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -190,6 +266,7 @@ class _WardrobePageState extends State<WardrobePage> {
                       'name': name,
                       'category': selectedCategory,
                       'season': selectedSeason,
+                      'color': selectedColor,
                     });
                   },
                   child: const Text('Simpan'),
@@ -205,9 +282,10 @@ class _WardrobePageState extends State<WardrobePage> {
 
     try {
       final updated = item.copyWith(
-        name: result['name'],
-        category: result['category'],
-        season: result['season'],
+        name: result['name'] as String,
+        category: result['category'] as String,
+        season: result['season'] as String,
+        color: result['color'] as Color,
       );
       await _catalogService.updateLocalItem(updated);
       if (mounted) {

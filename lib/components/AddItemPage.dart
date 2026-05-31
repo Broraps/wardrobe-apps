@@ -7,6 +7,7 @@ import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import 'package:path/path.dart' as p;
 import '../model/ClothingItem.dart';
 import '../services/CatalogService.dart';
+import 'ColorPickerDialog.dart';
 
 class AddItemPage extends StatefulWidget {
   const AddItemPage({super.key});
@@ -257,8 +258,7 @@ class _AddItemPageState extends State<AddItemPage> {
                 ),
               ),
               const SizedBox(height: 20),
-
-              // --- HASIL DETEKSI WARNA ---
+              // --- HASIL DETEKSI WARNA + PILIH MANUAL ---
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -266,37 +266,69 @@ class _AddItemPageState extends State<AddItemPage> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.blue.shade200),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _detectedColor, // Warna hasil deteksi
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: [
-                          BoxShadow(blurRadius: 2, color: Colors.black26),
-                        ],
-                      ),
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: _detectedColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(blurRadius: 2, color: Colors.black26),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Warna Item:",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                _hexColorString,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "Warna Terdeteksi (Auto):",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            _hexColorString,
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                        ],
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await ColorPickerDialog.show(
+                            context,
+                            _detectedColor,
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _detectedColor = picked;
+                              _hexColorString =
+                                  '0x${picked.toARGB32().toRadixString(16).toUpperCase()}';
+                              // Recalculate season berdasarkan warna baru
+                              _selectedSeason = _guessSeasonFromColor(picked);
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.palette, size: 18),
+                        label: const Text('Ubah Warna Manual'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.deepPurple,
+                          side: const BorderSide(color: Colors.deepPurple),
+                        ),
                       ),
                     ),
                   ],
