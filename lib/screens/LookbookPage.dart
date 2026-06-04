@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../model/LookbookItem.dart';
 import '../services/LookbookService.dart';
 
@@ -333,11 +334,184 @@ class _LookbookCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Halaman Detail Lookbook (full screen image viewer)
+// Halaman Detail Lookbook (full screen image viewer + edit & share)
 // ─────────────────────────────────────────────────────────────────────────────
-class LookbookDetailPage extends StatelessWidget {
+class LookbookDetailPage extends StatefulWidget {
   final LookbookItem item;
   const LookbookDetailPage({super.key, required this.item});
+
+  @override
+  State<LookbookDetailPage> createState() => _LookbookDetailPageState();
+}
+
+class _LookbookDetailPageState extends State<LookbookDetailPage> {
+  final LookbookService _service = LookbookService();
+  late LookbookItem _item;
+
+  @override
+  void initState() {
+    super.initState();
+    _item = widget.item;
+  }
+
+  // ── Edit nama & jadwal ──────────────────────────────────────────────────
+  Future<void> _showEditDialog() async {
+    final nameController = TextEditingController(text: _item.name);
+    DateTime? pickedDate = _item.scheduledDate;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text('Edit Outfit'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nama Outfit',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Tanggal jadwal
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        Icons.calendar_today,
+                        color: pickedDate != null
+                            ? Colors.deepPurple
+                            : Colors.grey,
+                      ),
+                      title: Text(
+                        pickedDate != null
+                            ? DateFormat('d MMMM yyyy', 'id')
+                                .format(pickedDate!)
+                            : 'Belum dijadwalkan',
+                      ),
+                      subtitle: const Text('Jadwal pemakaian'),
+                      trailing: pickedDate != null
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                setDialogState(() {
+                                  pickedDate = null;
+                                });
+                              },
+                            )
+                          : null,
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: ctx,
+                          initialDate: pickedDate ?? DateTime.now(),
+                          firstDate: DateTime.now()
+                              .subtract(const Duration(days: 365)),
+                          lastDate: DateTime.now()
+                              .add(const Duration(days: 365)),
+                        );
+                        if (date != null) {
+                          setDialogState(() {
+                            pickedDate = date;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    final name = nameController.text.trim();
+                    if (name.isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(
+                          content: Text('Nama tidak boleh kosong'),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.pop(ctx, {
+                      'name': name,
+                      'scheduledDate': pickedDate,
+                    });
+                  },
+                  child: const Text('Simpan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) return;
+
+    try {
+      final updated = _item.copyWith(
+        name: result['name'] as String,
+        scheduledDate: result['scheduledDate'] as DateTime?,
+        clearScheduledDate: result['scheduledDate'] == null,
+      );
+      await _service.update(updated);
+      if (mounted) {
+        setState(() {
+          _item = updated;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${updated.name}" berhasil diperbarui')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memperbarui: $e')),
+        );
+      }
+    }
+  }
+
+  // ── Share gambar outfit ─────────────────────────────────────────────────
+  Future<void> _shareOutfit() async {
+    final file = File(_item.imagePath);
+    if (!await file.exists()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File gambar tidak ditemukan')),
+        );
+      }
+      return;
+    }
+
+    try {
+      await Share.shareXFiles(
+        [XFile(_item.imagePath)],
+        text: '👗 Outfit: ${_item.name}\nDari Smart Wardrobe',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal share: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -349,12 +523,26 @@ class LookbookDetailPage extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         title: Text(
-          item.name,
+          _item.name,
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          // Tombol Edit
+          IconButton(
+            icon: const Icon(Icons.edit, color: Colors.white),
+            tooltip: 'Edit',
+            onPressed: _showEditDialog,
+          ),
+          // Tombol Share
+          IconButton(
+            icon: const Icon(Icons.share, color: Colors.white),
+            tooltip: 'Share',
+            onPressed: _shareOutfit,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -363,7 +551,7 @@ class LookbookDetailPage extends StatelessWidget {
             child: InteractiveViewer(
               child: Center(
                 child: Image.file(
-                  File(item.imagePath),
+                  File(_item.imagePath),
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Center(
                     child: Icon(
@@ -402,7 +590,7 @@ class LookbookDetailPage extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  item.name,
+                  _item.name,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -414,19 +602,54 @@ class LookbookDetailPage extends StatelessWidget {
                   icon: Icons.access_time,
                   color: Colors.white60,
                   text:
-                      'Dibuat: ${DateFormat('EEEE, d MMMM yyyy', 'id').format(item.createdAt)}',
+                      'Dibuat: ${DateFormat('EEEE, d MMMM yyyy', 'id').format(_item.createdAt)}',
                   textColor: Colors.white60,
                 ),
-                if (item.scheduledDate != null) ...[
+                if (_item.scheduledDate != null) ...[
                   const SizedBox(height: 6),
                   _infoRow(
                     icon: Icons.calendar_today,
                     color: Colors.amberAccent,
                     text:
-                        'Dijadwalkan: ${DateFormat('EEEE, d MMMM yyyy', 'id').format(item.scheduledDate!)}',
+                        'Dijadwalkan: ${DateFormat('EEEE, d MMMM yyyy', 'id').format(_item.scheduledDate!)}',
                     textColor: Colors.amberAccent,
                   ),
                 ],
+
+                const SizedBox(height: 16),
+
+                // ── Tombol aksi cepat ──
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _showEditDialog,
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: const Text('Edit'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white38),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _shareOutfit,
+                        icon: const Icon(Icons.share, size: 16),
+                        label: const Text('Share'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

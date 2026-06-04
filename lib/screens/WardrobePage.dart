@@ -18,6 +18,16 @@ class _WardrobePageState extends State<WardrobePage> {
   final CatalogService _catalogService = CatalogService();
   late Future<List<ClothingItem>> _futureGallery;
 
+  // Filter kategori
+  String _selectedFilter = 'Semua';
+  static const List<String> _filterOptions = [
+    'Semua',
+    'Top',
+    'Bottom',
+    'Outer',
+    'Shoes',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -183,6 +193,7 @@ class _WardrobePageState extends State<WardrobePage> {
                             onTap: () async {
                               final picked = await ColorPickerDialog.show(
                                 ctx,
+                                item.imageUrl,
                                 selectedColor,
                               );
                               if (picked != null) {
@@ -224,6 +235,7 @@ class _WardrobePageState extends State<WardrobePage> {
                             onPressed: () async {
                               final picked = await ColorPickerDialog.show(
                                 ctx,
+                                item.imageUrl,
                                 selectedColor,
                               );
                               if (picked != null) {
@@ -232,7 +244,7 @@ class _WardrobePageState extends State<WardrobePage> {
                                 });
                               }
                             },
-                            icon: const Icon(Icons.palette, size: 16),
+                            icon: const Icon(Icons.colorize, size: 16),
                             label: const Text('Ubah'),
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.deepPurple,
@@ -419,17 +431,87 @@ class _WardrobePageState extends State<WardrobePage> {
             );
           }
 
-          final items = snapshot.data!;
-          return GridView.builder(
-            padding: const EdgeInsets.all(10),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.72,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: items.length,
-            itemBuilder: (context, index) => _buildItemCard(items[index]),
+          final allItems = snapshot.data!;
+          // Terapkan filter kategori
+          final items = _selectedFilter == 'Semua'
+              ? allItems
+              : allItems
+                  .where((item) => item.category == _selectedFilter)
+                  .toList();
+
+          return Column(
+            children: [
+              // ── Filter chips ────────────────────────────────────────────
+              SizedBox(
+                height: 52,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  itemCount: _filterOptions.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (ctx, i) {
+                    final label = _filterOptions[i];
+                    final isSelected = _selectedFilter == label;
+                    // Hitung jumlah item per kategori
+                    final count = label == 'Semua'
+                        ? allItems.length
+                        : allItems
+                            .where((item) => item.category == label)
+                            .length;
+
+                    return FilterChip(
+                      selected: isSelected,
+                      label: Text('$label ($count)'),
+                      labelStyle: TextStyle(
+                        color:
+                            isSelected ? Colors.white : Colors.grey[700],
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        fontSize: 12,
+                      ),
+                      selectedColor: Colors.deepPurple,
+                      backgroundColor: Colors.grey[200],
+                      checkmarkColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      side: BorderSide.none,
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedFilter = label;
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+
+              // ── Grid item ──────────────────────────────────────────────
+              Expanded(
+                child: items.isEmpty
+                    ? Center(
+                        child: Text(
+                          'Tidak ada item kategori "$_selectedFilter".',
+                          style: TextStyle(color: Colors.grey[500]),
+                        ),
+                      )
+                    : GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.72,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) =>
+                            _buildItemCard(items[index]),
+                      ),
+              ),
+            ],
           );
         },
       ),

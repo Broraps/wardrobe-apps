@@ -45,6 +45,17 @@ class LookbookService {
     await prefs.setString(_key, encoded);
   }
 
+  // ── Update item yang sudah ada ────────────────────────────────────────────
+  Future<void> update(LookbookItem updated) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await getAll();
+    final index = current.indexWhere((item) => item.id == updated.id);
+    if (index == -1) return;
+    current[index] = updated;
+    final encoded = jsonEncode(current.map((e) => e.toJson()).toList());
+    await prefs.setString(_key, encoded);
+  }
+
   // ── Filter item berdasarkan tanggal yang dijadwalkan ──────────────────────
   List<LookbookItem> getForDate(List<LookbookItem> items, DateTime date) {
     return items.where((item) {

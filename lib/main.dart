@@ -93,7 +93,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.photo_album),
+            selectedIcon: Icon(Icons.person_sharp),
             label: 'Profile',
           ),
         ],

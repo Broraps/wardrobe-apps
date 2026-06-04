@@ -1,17 +1,33 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
-/// Dialog pemilih warna manual untuk pakaian.
-/// Menampilkan grid warna umum pakaian + slider HSV untuk warna custom.
+/// Dialog image color picker — user mengetuk gambar untuk mengambil warna.
+/// Seperti fitur eyedropper / pipet warna.
 class ColorPickerDialog extends StatefulWidget {
+  final String imagePath; // path file gambar lokal
   final Color initialColor;
 
-  const ColorPickerDialog({super.key, required this.initialColor});
+  const ColorPickerDialog({
+    super.key,
+    required this.imagePath,
+    required this.initialColor,
+  });
 
   /// Helper untuk menampilkan dialog dan mengembalikan warna yang dipilih.
-  static Future<Color?> show(BuildContext context, Color initialColor) {
+  static Future<Color?> show(
+    BuildContext context,
+    String imagePath,
+    Color initialColor,
+  ) {
     return showDialog<Color>(
       context: context,
-      builder: (_) => ColorPickerDialog(initialColor: initialColor),
+      builder: (_) => ColorPickerDialog(
+        imagePath: imagePath,
+        initialColor: initialColor,
+      ),
     );
   }
 
@@ -20,233 +36,284 @@ class ColorPickerDialog extends StatefulWidget {
 }
 
 class _ColorPickerDialogState extends State<ColorPickerDialog> {
-  late HSVColor _hsvColor;
+  late Color _pickedColor;
+  ui.Image? _uiImage;
+  ByteData? _pixelData;
+  int _imageWidth = 0;
+  int _imageHeight = 0;
 
-  // Warna-warna umum pakaian
-  static const List<Color> _presetColors = [
-    Color(0xFF000000), // Hitam
-    Color(0xFFFFFFFF), // Putih
-    Color(0xFF808080), // Abu-abu
-    Color(0xFF1B1B1B), // Charcoal
-    Color(0xFF2C3E50), // Navy
-    Color(0xFF1A237E), // Dark Blue
-    Color(0xFF1565C0), // Blue
-    Color(0xFF42A5F5), // Light Blue
-    Color(0xFF004D40), // Dark Teal
-    Color(0xFF2E7D32), // Green
-    Color(0xFF66BB6A), // Light Green
-    Color(0xFFA5D6A7), // Sage
-    Color(0xFFC62828), // Red
-    Color(0xFFE53935), // Bright Red
-    Color(0xFFEF5350), // Coral
-    Color(0xFFF48FB1), // Pink
-    Color(0xFF6A1B9A), // Purple
-    Color(0xFF9C27B0), // Violet
-    Color(0xFFCE93D8), // Lavender
-    Color(0xFFFF6F00), // Orange
-    Color(0xFFFFA726), // Light Orange
-    Color(0xFFFDD835), // Yellow
-    Color(0xFF795548), // Brown
-    Color(0xFF8D6E63), // Light Brown
-    Color(0xFFD7CCC8), // Beige
-    Color(0xFFF5F5DC), // Cream
-    Color(0xFFBCAAA4), // Taupe
-    Color(0xFFA1887F), // Mauve
-  ];
+  // Posisi sentuhan terakhir (koordinat widget, bukan gambar)
+  Offset? _touchPosition;
+
+  // Key untuk mendapat ukuran widget gambar
+  final GlobalKey _imageKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    _hsvColor = HSVColor.fromColor(widget.initialColor);
+    _pickedColor = widget.initialColor;
+    _loadImage();
   }
 
-  void _selectPreset(Color color) {
+  /// Decode file gambar ke ui.Image dan ambil pixel data (RGBA)
+  Future<void> _loadImage() async {
+    try {
+      final file = File(widget.imagePath);
+      final bytes = await file.readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+
+      if (mounted) {
+        setState(() {
+          _uiImage = image;
+          _pixelData = byteData;
+          _imageWidth = image.width;
+          _imageHeight = image.height;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading image for color picker: $e');
+    }
+  }
+
+  /// Ambil warna dari posisi sentuhan pada widget gambar
+  void _onTouch(Offset localPosition) {
+    if (_pixelData == null || _imageWidth == 0 || _imageHeight == 0) return;
+
+    // Dapatkan ukuran widget gambar yang sedang ditampilkan
+    final renderBox =
+        _imageKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final widgetSize = renderBox.size;
+
+    // Hitung skala dan offset karena BoxFit.contain
+    final scaleX = widgetSize.width / _imageWidth;
+    final scaleY = widgetSize.height / _imageHeight;
+    final scale = scaleX < scaleY ? scaleX : scaleY;
+
+    final renderedWidth = _imageWidth * scale;
+    final renderedHeight = _imageHeight * scale;
+    final offsetX = (widgetSize.width - renderedWidth) / 2;
+    final offsetY = (widgetSize.height - renderedHeight) / 2;
+
+    // Konversi posisi sentuhan ke koordinat piksel gambar asli
+    final imgX =
+        ((localPosition.dx - offsetX) / scale).round().clamp(0, _imageWidth - 1);
+    final imgY =
+        ((localPosition.dy - offsetY) / scale).round().clamp(0, _imageHeight - 1);
+
+    // Baca warna RGBA dari pixel data (4 byte per pixel)
+    final pixelIndex = (imgY * _imageWidth + imgX) * 4;
+    if (pixelIndex < 0 || pixelIndex + 3 >= _pixelData!.lengthInBytes) return;
+
+    final r = _pixelData!.getUint8(pixelIndex);
+    final g = _pixelData!.getUint8(pixelIndex + 1);
+    final b = _pixelData!.getUint8(pixelIndex + 2);
+    final a = _pixelData!.getUint8(pixelIndex + 3);
+
     setState(() {
-      _hsvColor = HSVColor.fromColor(color);
+      _pickedColor = Color.fromARGB(a, r, g, b);
+      _touchPosition = localPosition;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final selectedColor = _hsvColor.toColor();
+    final hexString =
+        '0x${_pickedColor.toARGB32().toRadixString(16).toUpperCase()}';
 
-    return AlertDialog(
-      title: const Text('Pilih Warna'),
-      content: SingleChildScrollView(
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Preview warna terpilih ──
-            Container(
-              height: 50,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: selectedColor,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade300),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black12, blurRadius: 4),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  '0x${selectedColor.toARGB32().toRadixString(16).toUpperCase()}',
-                  style: TextStyle(
-                    color: _hsvColor.value > 0.5 && _hsvColor.saturation < 0.5
-                        ? Colors.black87
-                        : Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+            // ── Header ──
+            Row(
+              children: [
+                const Icon(Icons.colorize, color: Colors.deepPurple),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Pilih Warna dari Gambar',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ketuk pada area gambar untuk mengambil warna',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Area gambar (touchable) ──
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                height: 280,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: _uiImage == null
+                    ? const Center(
+                        child: CircularProgressIndicator(),
+                      )
+                    : GestureDetector(
+                        onTapDown: (details) =>
+                            _onTouch(details.localPosition),
+                        onPanUpdate: (details) =>
+                            _onTouch(details.localPosition),
+                        onPanStart: (details) =>
+                            _onTouch(details.localPosition),
+                        child: Stack(
+                          children: [
+                            // Gambar utama
+                            SizedBox(
+                              key: _imageKey,
+                              height: 280,
+                              width: double.infinity,
+                              child: Image.file(
+                                File(widget.imagePath),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+
+                            // Crosshair / indicator posisi sentuhan
+                            if (_touchPosition != null)
+                              Positioned(
+                                left: _touchPosition!.dx - 20,
+                                top: _touchPosition!.dy - 20,
+                                child: IgnorePointer(
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 3,
+                                      ),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          blurRadius: 4,
+                                          color: Colors.black38,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _pickedColor,
+                                        border: Border.all(
+                                          color: Colors.black54,
+                                          width: 1,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 16),
 
-            // ── Grid warna preset ──
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Warna Umum:',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
+            // ── Preview warna yang dipilih ──
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade300),
               ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _presetColors.map((color) {
-                final isSelected =
-                    (color.toARGB32() == selectedColor.toARGB32());
-                return GestureDetector(
-                  onTap: () => _selectPreset(color),
-                  child: Container(
-                    width: 34,
-                    height: 34,
+              child: Row(
+                children: [
+                  // Lingkaran warna
+                  Container(
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
-                      color: color,
+                      color: _pickedColor,
                       shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected
-                            ? Colors.deepPurple
-                            : Colors.grey.shade300,
-                        width: isSelected ? 3 : 1,
-                      ),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: Colors.deepPurple.withValues(alpha: 0.4),
-                                blurRadius: 6,
-                              ),
-                            ]
-                          : null,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: const [
+                        BoxShadow(blurRadius: 4, color: Colors.black26),
+                      ],
                     ),
-                    child: isSelected
-                        ? Icon(
-                            Icons.check,
-                            size: 16,
-                            color: HSVColor.fromColor(color).value > 0.5
-                                ? Colors.black
-                                : Colors.white,
-                          )
-                        : null,
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-
-            // ── Slider HSV untuk custom ──
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Warna Custom:',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Warna Terpilih:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hexString,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
 
-            // Hue slider
+            // ── Tombol aksi ──
             Row(
               children: [
-                const SizedBox(
-                  width: 60,
-                  child: Text('Hue', style: TextStyle(fontSize: 11)),
-                ),
                 Expanded(
-                  child: SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 10,
-                      thumbShape:
-                          const RoundSliderThumbShape(enabledThumbRadius: 8),
-                      overlayShape:
-                          const RoundSliderOverlayShape(overlayRadius: 14),
-                      trackShape: _HueTrackShape(),
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: Slider(
-                      value: _hsvColor.hue,
-                      min: 0,
-                      max: 360,
-                      onChanged: (val) {
-                        setState(() {
-                          _hsvColor = _hsvColor.withHue(val);
-                        });
-                      },
-                    ),
+                    child: const Text('Batal'),
                   ),
                 ),
-              ],
-            ),
-
-            // Saturation slider
-            Row(
-              children: [
-                const SizedBox(
-                  width: 60,
-                  child: Text('Saturasi', style: TextStyle(fontSize: 11)),
-                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Slider(
-                    value: _hsvColor.saturation,
-                    min: 0,
-                    max: 1,
-                    activeColor: selectedColor,
-                    onChanged: (val) {
-                      setState(() {
-                        _hsvColor = _hsvColor.withSaturation(val);
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-
-            // Value/brightness slider
-            Row(
-              children: [
-                const SizedBox(
-                  width: 60,
-                  child: Text('Terang', style: TextStyle(fontSize: 11)),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _hsvColor.value,
-                    min: 0,
-                    max: 1,
-                    activeColor: selectedColor,
-                    onChanged: (val) {
-                      setState(() {
-                        _hsvColor = _hsvColor.withValue(val);
-                      });
-                    },
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, _pickedColor),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('Pilih Warna Ini'),
                   ),
                 ),
               ],
@@ -254,72 +321,6 @@ class _ColorPickerDialogState extends State<ColorPickerDialog> {
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Batal'),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.deepPurple,
-            foregroundColor: Colors.white,
-          ),
-          onPressed: () => Navigator.pop(context, selectedColor),
-          child: const Text('Pilih'),
-        ),
-      ],
     );
-  }
-}
-
-/// Custom track shape untuk slider hue (menampilkan spektrum warna)
-class _HueTrackShape extends SliderTrackShape {
-  @override
-  Rect getPreferredRect({
-    required RenderBox parentBox,
-    Offset offset = Offset.zero,
-    required SliderThemeData sliderTheme,
-    bool isEnabled = false,
-    bool isDiscrete = false,
-  }) {
-    final trackHeight = sliderTheme.trackHeight ?? 10;
-    final trackTop =
-        offset.dy + (parentBox.size.height - trackHeight) / 2;
-    final trackLeft = offset.dx + 8;
-    final trackWidth = parentBox.size.width - 16;
-    return Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight);
-  }
-
-  @override
-  void paint(
-    PaintingContext context,
-    Offset offset, {
-    required RenderBox parentBox,
-    required SliderThemeData sliderTheme,
-    required Animation<double> enableAnimation,
-    required TextDirection textDirection,
-    required Offset thumbCenter,
-    Offset? secondaryOffset,
-    bool isDiscrete = false,
-    bool isEnabled = false,
-  }) {
-    final rect = getPreferredRect(
-      parentBox: parentBox,
-      offset: offset,
-      sliderTheme: sliderTheme,
-    );
-
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(5));
-
-    // Buat gradient dengan spektrum warna (hue 0-360)
-    final colors = List<Color>.generate(
-      7,
-      (i) => HSVColor.fromAHSV(1, i * 60.0, 1, 1).toColor(),
-    );
-
-    final gradient = LinearGradient(colors: colors);
-    final paint = Paint()..shader = gradient.createShader(rect);
-
-    context.canvas.drawRRect(rrect, paint);
   }
 }

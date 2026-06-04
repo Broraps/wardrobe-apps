@@ -44,6 +44,7 @@ dependencies:
   google_mlkit_image_labeling: ^0.14.2
   shared_preferences: ^2.3.5
   flutter_dotenv: ^6.0.0
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

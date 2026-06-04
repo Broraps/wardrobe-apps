@@ -15,7 +15,7 @@ class PlannerPage extends StatefulWidget {
   State<PlannerPage> createState() => _PlannerPageState();
 }
 
-class _PlannerPageState extends State<PlannerPage> {
+class _PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
   final LookbookService _lookbookService = LookbookService();
 
   CalendarFormat _calendarFormat = CalendarFormat.week;
@@ -28,15 +28,32 @@ class _PlannerPageState extends State<PlannerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadLookbook();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Auto-refresh saat app kembali dari background
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadLookbook();
+    }
   }
 
   Future<void> _loadLookbook() async {
     final items = await _lookbookService.getAll();
-    setState(() {
-      _allItems = items;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _allItems = items;
+        _isLoading = false;
+      });
+    }
   }
 
   /// Ambil outfit yang dijadwalkan untuk hari tertentu (dipakai eventLoader)

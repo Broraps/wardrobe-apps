@@ -38,4 +38,21 @@ class LookbookItem {
       itemIds: List<String>.from(json['itemIds'] ?? []),
     );
   }
+
+  /// Buat salinan dengan field yang diubah
+  LookbookItem copyWith({
+    String? name,
+    DateTime? scheduledDate,
+    bool clearScheduledDate = false,
+  }) {
+    return LookbookItem(
+      id: id,
+      name: name ?? this.name,
+      imagePath: imagePath,
+      createdAt: createdAt,
+      scheduledDate:
+          clearScheduledDate ? null : (scheduledDate ?? this.scheduledDate),
+      itemIds: itemIds,
+    );
+  }
 }

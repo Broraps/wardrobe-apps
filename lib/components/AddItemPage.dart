@@ -308,23 +308,26 @@ class _AddItemPageState extends State<AddItemPage> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await ColorPickerDialog.show(
-                            context,
-                            _detectedColor,
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              _detectedColor = picked;
-                              _hexColorString =
-                                  '0x${picked.toARGB32().toRadixString(16).toUpperCase()}';
-                              // Recalculate season berdasarkan warna baru
-                              _selectedSeason = _guessSeasonFromColor(picked);
-                            });
-                          }
-                        },
-                        icon: const Icon(Icons.palette, size: 18),
-                        label: const Text('Ubah Warna Manual'),
+                        onPressed: _imageFile == null
+                            ? null
+                            : () async {
+                                final picked = await ColorPickerDialog.show(
+                                  context,
+                                  _imageFile!.path,
+                                  _detectedColor,
+                                );
+                                if (picked != null) {
+                                  setState(() {
+                                    _detectedColor = picked;
+                                    _hexColorString =
+                                        '0x${picked.toARGB32().toRadixString(16).toUpperCase()}';
+                                    // Recalculate season berdasarkan warna baru
+                                    _selectedSeason = _guessSeasonFromColor(picked);
+                                  });
+                                }
+                              },
+                        icon: const Icon(Icons.colorize, size: 18),
+                        label: const Text('Pilih Warna dari Gambar'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.deepPurple,
                           side: const BorderSide(color: Colors.deepPurple),
