@@ -75,11 +75,11 @@ class _WardrobePageState extends State<WardrobePage> {
               subtitle: const Text('Item biru — tersedia di semua device'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final result = await Navigator.push(
+                await Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const CatalogPage()),
                 );
-                if (result == true) _refresh();
+                _refresh(); // Selalu refresh setelah kembali
               },
             ),
             ListTile(
@@ -91,11 +91,11 @@ class _WardrobePageState extends State<WardrobePage> {
               subtitle: const Text('Item hijau — hanya di device ini'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final result = await Navigator.push(
+                await Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const AddItemPage()),
                 );
-                if (result == true) _refresh();
+                _refresh(); // Selalu refresh setelah kembali
               },
             ),
             const SizedBox(height: 8),
@@ -107,21 +107,12 @@ class _WardrobePageState extends State<WardrobePage> {
 
   // ── EDIT ───────────────────────────────────────────────────────────────────
   Future<void> _showEditDialog(ClothingItem item) async {
-    if (!item.isLocal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Item cloud tidak bisa diedit. Hanya item lokal yang bisa diubah.'),
-        ),
-      );
-      return;
-    }
-
     final nameController = TextEditingController(text: item.name);
     final categories = ['Top', 'Bottom', 'Outer', 'Shoes'];
-    final seasons = ['Winter', 'Summer', 'Spring', 'Autumn'];
     String selectedCategory = categories.contains(item.category)
         ? item.category
         : categories.first;
+    final seasons = ['Winter', 'Summer', 'Spring', 'Autumn'];
     String selectedSeason = seasons.contains(item.season)
         ? item.season
         : seasons.first;
@@ -299,7 +290,12 @@ class _WardrobePageState extends State<WardrobePage> {
         season: result['season'] as String,
         color: result['color'] as Color,
       );
-      await _catalogService.updateLocalItem(updated);
+      // Simpan ke storage yang sesuai (lokal vs cloud metadata)
+      if (item.isLocal) {
+        await _catalogService.updateLocalItem(updated);
+      } else {
+        await _catalogService.updateCloudMeta(updated);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('"${updated.name}" berhasil diperbarui')),

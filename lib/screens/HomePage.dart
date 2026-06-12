@@ -11,10 +11,23 @@ import '../model/ClothingItem.dart';
 import '../model/LookbookItem.dart';
 import '../services/CatalogService.dart';
 import '../services/LookbookService.dart';
+import '../services/ProfileService.dart';
 import '../services/SmartStylistService.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => HomePageState();
+}
+
+class HomePageState extends State<HomePage> {
+  final GlobalKey<RandomizerViewState> _randomizerKey = GlobalKey();
+
+  /// Public — dipanggil dari main.dart via GlobalKey saat tab Styling aktif
+  void refresh() {
+    _randomizerKey.currentState?.refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,10 +43,10 @@ class HomePage extends StatelessWidget {
             ],
           ),
         ),
-        body: const TabBarView(
+        body: TabBarView(
           children: [
-            RandomizerView(), // Sub-halaman 1.1
-            CanvasView(),     // Sub-halaman 1.2
+            RandomizerView(key: _randomizerKey), // Sub-halaman 1.1
+            const CanvasView(),                  // Sub-halaman 1.2
           ],
         ),
       ),
@@ -48,28 +61,46 @@ class RandomizerView extends StatefulWidget {
   const RandomizerView({super.key});
 
   @override
-  State<RandomizerView> createState() => _RandomizerViewState();
+  State<RandomizerView> createState() => RandomizerViewState();
 }
 
-class _RandomizerViewState extends State<RandomizerView> {
+class RandomizerViewState extends State<RandomizerView> {
   bool includeOuter = false;
 
   // Instance dari Algoritma kita
   final SmartStylistService _stylistService = SmartStylistService();
   final CatalogService _catalogService = CatalogService();
+  final ProfileService _profileService = ProfileService();
 
   // Data State
   List<ClothingItem> _myWardrobe = [];
   OutfitResult? _currentOutfit;
   bool _isLoading = true;
 
-  // Simulasi Profil User (Nanti bisa diambil dari Database Profil)
-  final String _currentUserSeason = "Autumn";
+  // Profil warna user (diambil dari ProfileService, bukan hardcode)
+  String _currentUserSeason = 'Autumn'; // fallback default
 
   @override
   void initState() {
     super.initState();
+    _loadProfile();
     _loadWardrobe();
+  }
+
+  /// Public refresh — dipanggil via GlobalKey saat tab Styling aktif
+  void refresh() {
+    _loadProfile();
+    _loadWardrobe();
+  }
+
+  /// Muat profil user dari SharedPreferences
+  Future<void> _loadProfile() async {
+    final profile = await _profileService.getProfile();
+    if (profile != null && mounted) {
+      setState(() {
+        _currentUserSeason = profile.season;
+      });
+    }
   }
 
   // Tarik semua baju dari HP/Supabase saat halaman dibuka

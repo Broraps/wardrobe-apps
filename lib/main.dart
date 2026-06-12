@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wardrobe_apps/screens/HomePage.dart';
 import 'package:wardrobe_apps/screens/LookbookPage.dart';
 import 'package:wardrobe_apps/screens/PlannerPage.dart';
+import 'package:wardrobe_apps/screens/ProfilePage.dart';
 import 'package:wardrobe_apps/screens/WardrobePage.dart';
 
 Future<void> main() async {
@@ -49,19 +50,24 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _pages = [
-    const HomePage(), // Tab 0: Styling (Randomizer + Canvas DIY)
-    const PlannerPage(), // Tab 1: Planner
-    const WardrobePage(), // Tab 2: Wardrobe
-    const LookbookPage(), // Tab 3: Lookbook (BARU)
-    // const ProfilePage(),  // Tab 4: Profile
+  // GlobalKeys untuk refresh saat tab aktif (IndexedStack tidak rebuild)
+  final GlobalKey<HomePageState> _homeKey = GlobalKey();
+  final GlobalKey<PlannerPageState> _plannerKey = GlobalKey();
+  final GlobalKey<LookbookPageState> _lookbookKey = GlobalKey();
+  final GlobalKey<ProfilePageState> _profileKey = GlobalKey();
+
+  late final List<Widget> _pages = [
+    HomePage(key: _homeKey),             // Tab 0: Styling
+    PlannerPage(key: _plannerKey),       // Tab 1: Planner
+    const WardrobePage(),                // Tab 2: Wardrobe
+    LookbookPage(key: _lookbookKey),     // Tab 3: Lookbook
+    ProfilePage(key: _profileKey),       // Tab 4: Profile
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
-        // Pakai IndexedStack agar state tiap tab tidak di-reset saat pindah tab
         index: _currentIndex,
         children: _pages,
       ),
@@ -69,6 +75,21 @@ class _MainScreenState extends State<MainScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (int index) {
           setState(() => _currentIndex = index);
+          // Auto-refresh data saat tab dipilih
+          switch (index) {
+            case 0:
+              _homeKey.currentState?.refresh();
+              break;
+            case 1:
+              _plannerKey.currentState?.refresh();
+              break;
+            case 3:
+              _lookbookKey.currentState?.refresh();
+              break;
+            case 4:
+              _profileKey.currentState?.refresh();
+              break;
+          }
         },
         destinations: const [
           NavigationDestination(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../model/ClothingItem.dart';
 import '../services/CatalogService.dart';
+import '../utils/color_season_utils.dart';
 
 /// Halaman untuk browse semua item cloud dari Supabase.
 /// User bisa memilih item mana yang ingin ditambahkan ke gallery device ini.
@@ -18,7 +19,7 @@ class _CatalogPageState extends State<CatalogPage> {
   List<ClothingItem> _allCloudItems = [];
   Set<String> _galleryIds = {};
 
-  bool _changed = false; // untuk trigger refresh WardrobePage jika ada perubahan
+  bool _changed = false;
 
   @override
   void initState() {
@@ -45,14 +46,87 @@ class _CatalogPageState extends State<CatalogPage> {
 
   Future<void> _toggleItem(ClothingItem item) async {
     final inGallery = _galleryIds.contains(item.id);
+
     if (inGallery) {
+      // Hapus dari gallery — langsung, tanpa dialog
       await _service.removeCloudFromGallery(item.id);
       setState(() => _galleryIds.remove(item.id));
-    } else {
-      await _service.addCloudToGallery(item.id);
-      setState(() => _galleryIds.add(item.id));
+      _changed = true;
+      return;
     }
+
+    // ── Tambah ke gallery: minta user pilih kategori ──
+    final category = await _showCategoryPicker();
+    if (category == null) return; // user cancel
+
+    // Buat ClothingItem dengan metadata lengkap
+    final detectedSeason = guessSeasonFromColor(item.color);
+    final itemWithMeta = ClothingItem(
+      id: item.id,
+      name: item.name,
+      category: category,
+      color: item.color,
+      imageUrl: item.imageUrl,
+      season: detectedSeason,
+      isLocal: false,
+    );
+
+    await _service.addCloudToGallery(item.id, itemMeta: itemWithMeta);
+    setState(() => _galleryIds.add(item.id));
     _changed = true;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('"${item.name}" ditambahkan sebagai $category'),
+        ),
+      );
+    }
+  }
+
+  /// Dialog pilih kategori saat menambahkan cloud item ke gallery
+  Future<String?> _showCategoryPicker() async {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Pilih Kategori'),
+        content: const Text(
+          'Tentukan kategori item ini agar bisa digunakan di Randomizer outfit.',
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              _categoryButton(ctx, 'Top', Icons.checkroom),
+              _categoryButton(ctx, 'Bottom', Icons.accessibility_new),
+              _categoryButton(ctx, 'Outer', Icons.dry_cleaning),
+              _categoryButton(ctx, 'Shoes', Icons.ice_skating),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _categoryButton(BuildContext ctx, String category, IconData icon) {
+    return SizedBox(
+      width: 110,
+      child: ElevatedButton.icon(
+        onPressed: () => Navigator.pop(ctx, category),
+        icon: Icon(icon, size: 18),
+        label: Text(category),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.deepPurple,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+      ),
+    );
   }
 
   @override

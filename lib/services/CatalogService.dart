@@ -11,6 +11,7 @@ class CatalogService {
 
   // SharedPreferences keys
   static const _galleryCloudIdsKey = 'gallery_cloud_ids';
+  static const _galleryCloudMetaKey = 'gallery_cloud_meta'; // metadata lengkap cloud items
   static const _localItemsKey = 'local_items';
 
   // ── 1. CLOUD: List semua file dari Storage wardrobe_files ─────────────────
@@ -54,24 +55,69 @@ class CatalogService {
     return _supabase.storage.from(_storageBucket).getPublicUrl(fileName);
   }
 
-  // ── 2. GALLERY: Manajemen nama file cloud per device ──────────────────────
+  // ── 2. GALLERY: Manajemen cloud items per device ──────────────────────────
   Future<Set<String>> getGalleryCloudIds() async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getStringList(_galleryCloudIdsKey) ?? []).toSet();
   }
 
-  Future<void> addCloudToGallery(String id) async {
+  /// Simpan cloud item ke gallery DENGAN metadata lengkap (kategori, warna, season)
+  Future<void> addCloudToGallery(String id, {required ClothingItem itemMeta}) async {
     final prefs = await SharedPreferences.getInstance();
-    final current = (prefs.getStringList(_galleryCloudIdsKey) ?? []).toSet();
-    current.add(id);
-    await prefs.setStringList(_galleryCloudIdsKey, current.toList());
+    // Simpan ID
+    final currentIds = (prefs.getStringList(_galleryCloudIdsKey) ?? []).toSet();
+    currentIds.add(id);
+    await prefs.setStringList(_galleryCloudIdsKey, currentIds.toList());
+    // Simpan metadata lengkap
+    final metaItems = await _getCloudMetaItems();
+    metaItems.removeWhere((item) => item.id == id); // hindari duplikat
+    metaItems.add(itemMeta);
+    final encoded = jsonEncode(metaItems.map((e) => e.toLocalJson()).toList());
+    await prefs.setString(_galleryCloudMetaKey, encoded);
   }
 
   Future<void> removeCloudFromGallery(String id) async {
     final prefs = await SharedPreferences.getInstance();
-    final current = (prefs.getStringList(_galleryCloudIdsKey) ?? []).toSet();
-    current.remove(id);
-    await prefs.setStringList(_galleryCloudIdsKey, current.toList());
+    // Hapus ID
+    final currentIds = (prefs.getStringList(_galleryCloudIdsKey) ?? []).toSet();
+    currentIds.remove(id);
+    await prefs.setStringList(_galleryCloudIdsKey, currentIds.toList());
+    // Hapus metadata
+    final metaItems = await _getCloudMetaItems();
+    metaItems.removeWhere((item) => item.id == id);
+    final encoded = jsonEncode(metaItems.map((e) => e.toLocalJson()).toList());
+    await prefs.setString(_galleryCloudMetaKey, encoded);
+  }
+
+  /// Ambil metadata cloud items yang sudah disimpan di gallery
+  Future<List<ClothingItem>> _getCloudMetaItems() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString(_galleryCloudMetaKey);
+    if (jsonStr == null || jsonStr.isEmpty) return [];
+    final List<dynamic> decoded = jsonDecode(jsonStr);
+    return decoded
+        .map((e) => ClothingItem.fromLocalJson(e as Map<String, dynamic>))
+        .map((item) => ClothingItem(
+              id: item.id,
+              name: item.name,
+              category: item.category,
+              color: item.color,
+              imageUrl: item.imageUrl,
+              season: item.season,
+              isLocal: false, // tetap cloud
+            ))
+        .toList();
+  }
+
+  /// Update metadata cloud item (misalnya setelah edit kategori)
+  Future<void> updateCloudMeta(ClothingItem updatedItem) async {
+    final prefs = await SharedPreferences.getInstance();
+    final metaItems = await _getCloudMetaItems();
+    final index = metaItems.indexWhere((item) => item.id == updatedItem.id);
+    if (index == -1) return;
+    metaItems[index] = updatedItem;
+    final encoded = jsonEncode(metaItems.map((e) => e.toLocalJson()).toList());
+    await prefs.setString(_galleryCloudMetaKey, encoded);
   }
 
   // ── 3. LOCAL ITEMS: Manajemen item lokal per device ───────────────────────
@@ -116,26 +162,16 @@ class CatalogService {
     await prefs.setString(_localItemsKey, encoded);
   }
 
-  // ── 4. GALLERY: Gabung cloud (yg dipilih) + lokal ─────────────────────────
-  // Dipakai di WardrobePage
+  // ── 4. GALLERY: Gabung cloud (yg dipilih + metadata) + lokal ──────────────
+  // Dipakai di WardrobePage & Randomizer
   Future<List<ClothingItem>> fetchGallery() async {
     try {
-      final galleryIds = await getGalleryCloudIds();
+      final cloudItems = await _getCloudMetaItems();
       final localItems = await getLocalItems();
-
-      List<ClothingItem> cloudItems = [];
-      if (galleryIds.isNotEmpty) {
-        // Ambil semua file dari storage, filter hanya yang dipilih device ini
-        final allCloud = await fetchAllCloudItems();
-        cloudItems = allCloud
-            .where((item) => galleryIds.contains(item.id))
-            .toList();
-      }
-
       return [...cloudItems, ...localItems];
     } catch (e) {
       debugPrint('Error fetching gallery: $e');
-      rethrow; // Biarkan caller menangani error dan menampilkan feedback ke user
+      rethrow;
     }
   }
 }

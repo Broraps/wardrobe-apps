@@ -7,6 +7,7 @@ import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import 'package:path/path.dart' as p;
 import '../model/ClothingItem.dart';
 import '../services/CatalogService.dart';
+import '../utils/color_season_utils.dart';
 import 'ColorPickerDialog.dart';
 
 class AddItemPage extends StatefulWidget {
@@ -17,35 +18,6 @@ class AddItemPage extends StatefulWidget {
 }
 
 class _AddItemPageState extends State<AddItemPage> {
-  // Helper Function: Tebak Musim dari Warna (HSV)
-  String _guessSeasonFromColor(Color color) {
-    HSVColor hsv = HSVColor.fromColor(color);
-    double hue = hsv.hue;
-    double saturation = hsv.saturation;
-    double value = hsv.value;
-
-    // Logika Sederhana (Bisa diperkompleks sesuai Bab 2 Skripsi)
-    bool isWarm =
-        (hue >= 0 && hue < 50) ||
-        (hue > 330 && hue <= 360); // Merah, Oranye, Kuning
-    bool isCool = (hue >= 150 && hue <= 270); // Biru, Ungu, Cyan
-
-    if (isWarm) {
-      // Jika Warm & Gelap/Muted -> Autumn
-      if (value < 0.6 || saturation < 0.6) return 'Autumn';
-      // Jika Warm & Terang/Cerah -> Spring
-      return 'Spring';
-    } else if (isCool) {
-      // Jika Cool & Gelap/Kontras -> Winter
-      if (value < 0.4 || saturation > 0.8) return 'Winter';
-      // Sisanya Summer
-      return 'Summer';
-    }
-
-    // Default fallback
-    return 'Winter';
-  }
-
   // Variabel Form
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
@@ -95,12 +67,15 @@ class _AddItemPageState extends State<AddItemPage> {
 
     // Ambil warna dominan, kalau gagal ambil warna vibrant
     Color picked =
-        generator.dominantColor?.color ?? generator.vibrantColor?.color ?? Colors.grey;
+        generator.dominantColor?.color ??
+        generator.vibrantColor?.color ??
+        Colors.grey;
 
     setState(() {
       _detectedColor = picked;
       // Ubah ke format Hex String untuk Database (cth: 0xFF123456)
-      _hexColorString = '0x${picked.toARGB32().toRadixString(16).toUpperCase()}';
+      _hexColorString =
+          '0x${picked.toARGB32().toRadixString(16).toUpperCase()}';
     });
 
     return picked;
@@ -149,8 +124,9 @@ class _AddItemPageState extends State<AddItemPage> {
         Navigator.pop(context, true);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Gagal simpan: $e")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Gagal simpan: $e")));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -216,7 +192,7 @@ class _AddItemPageState extends State<AddItemPage> {
         _selectedCategory = detectedCategory;
 
         // Tebak Musim dari warna yang di-pass langsung (bukan dari state)
-        _selectedSeason = _guessSeasonFromColor(colorForSeason);
+        _selectedSeason = guessSeasonFromColor(colorForSeason);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -225,7 +201,7 @@ class _AddItemPageState extends State<AddItemPage> {
         ),
       );
     } catch (e) {
-      print("Error labeling: $e");
+      debugPrint("Error labeling: $e");
     } finally {
       imageLabeler.close();
     }
@@ -322,7 +298,9 @@ class _AddItemPageState extends State<AddItemPage> {
                                     _hexColorString =
                                         '0x${picked.toARGB32().toRadixString(16).toUpperCase()}';
                                     // Recalculate season berdasarkan warna baru
-                                    _selectedSeason = _guessSeasonFromColor(picked);
+                                    _selectedSeason = guessSeasonFromColor(
+                                      picked,
+                                    );
                                   });
                                 }
                               },

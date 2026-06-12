@@ -12,10 +12,10 @@ class LookbookPage extends StatefulWidget {
   const LookbookPage({super.key});
 
   @override
-  State<LookbookPage> createState() => _LookbookPageState();
+  State<LookbookPage> createState() => LookbookPageState();
 }
 
-class _LookbookPageState extends State<LookbookPage> {
+class LookbookPageState extends State<LookbookPage> {
   final LookbookService _service = LookbookService();
   late Future<List<LookbookItem>> _future;
 
@@ -25,7 +25,8 @@ class _LookbookPageState extends State<LookbookPage> {
     _future = _service.getAll();
   }
 
-  void _refresh() {
+  /// Public agar bisa dipanggil dari luar via GlobalKey saat tab aktif
+  void refresh() {
     final future = _service.getAll();
     setState(() {
       _future = future;
@@ -60,7 +61,7 @@ class _LookbookPageState extends State<LookbookPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('"${item.name}" dihapus dari Lookbook.')),
         );
-        _refresh();
+        refresh();
       }
     } catch (e) {
       if (mounted) {
@@ -116,7 +117,7 @@ class _LookbookPageState extends State<LookbookPage> {
                     builder: (_) => LookbookDetailPage(item: items[i]),
                   ),
                 );
-                _refresh();
+                refresh();
               },
             ),
           );

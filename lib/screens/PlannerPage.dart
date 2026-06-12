@@ -12,10 +12,10 @@ class PlannerPage extends StatefulWidget {
   const PlannerPage({super.key});
 
   @override
-  State<PlannerPage> createState() => _PlannerPageState();
+  State<PlannerPage> createState() => PlannerPageState();
 }
 
-class _PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
+class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
   final LookbookService _lookbookService = LookbookService();
 
   CalendarFormat _calendarFormat = CalendarFormat.week;
@@ -44,6 +44,11 @@ class _PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _loadLookbook();
     }
+  }
+
+  /// Public — dipanggil via GlobalKey saat tab Planner aktif
+  void refresh() {
+    _loadLookbook();
   }
 
   Future<void> _loadLookbook() async {
