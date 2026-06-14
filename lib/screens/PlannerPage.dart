@@ -9,7 +9,10 @@ import '../services/LookbookService.dart';
 import 'LookbookPage.dart';
 
 class PlannerPage extends StatefulWidget {
-  const PlannerPage({super.key});
+  /// Callback untuk navigasi langsung ke tab Styling → Canvas DIY
+  final VoidCallback? onNavigateToCanvas;
+
+  const PlannerPage({super.key, this.onNavigateToCanvas});
 
   @override
   State<PlannerPage> createState() => PlannerPageState();
@@ -286,19 +289,7 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
             if (!isPast) ...[
               const SizedBox(height: 20),
               OutlinedButton.icon(
-                onPressed: () {
-                  // Navigasi ke tab Styling (index 0)
-                  // Menggunakan DefaultTabController tidak bisa dari sini,
-                  // jadi tampilkan hint ke user
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        '💡 Pergi ke tab Styling → Canvas DIY untuk membuat outfit!',
-                      ),
-                      duration: Duration(seconds: 3),
-                    ),
-                  );
-                },
+                onPressed: widget.onNavigateToCanvas,
                 icon: const Icon(Icons.gesture),
                 label: const Text('Buat di Canvas DIY'),
                 style: OutlinedButton.styleFrom(

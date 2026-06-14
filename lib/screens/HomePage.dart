@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -21,41 +22,58 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   final GlobalKey<RandomizerViewState> _randomizerKey = GlobalKey();
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   /// Public — dipanggil dari main.dart via GlobalKey saat tab Styling aktif
   void refresh() {
     _randomizerKey.currentState?.refresh();
   }
 
+  /// Public — berpindah ke sub-tab Canvas DIY (index 1)
+  void openCanvasTab() {
+    _tabController.animateTo(1);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Outfit Studio'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Randomizer', icon: Icon(Icons.casino)),
-              Tab(text: 'Canvas DIY', icon: Icon(Icons.gesture)),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            RandomizerView(key: _randomizerKey), // Sub-halaman 1.1
-            const CanvasView(),                  // Sub-halaman 1.2
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Outfit Studio'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Randomizer', icon: Icon(Icons.casino)),
+            Tab(text: 'Canvas DIY', icon: Icon(Icons.gesture)),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          RandomizerView(key: _randomizerKey), // Sub-halaman 1.1
+          const CanvasView(), // Sub-halaman 1.2
+        ],
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1.1 Tampilan Randomizer
+// 1.1 Tampilan Randomizer — Slot Machine Fashion
 // ─────────────────────────────────────────────────────────────────────────────
 class RandomizerView extends StatefulWidget {
   const RandomizerView({super.key});
@@ -64,27 +82,71 @@ class RandomizerView extends StatefulWidget {
   State<RandomizerView> createState() => RandomizerViewState();
 }
 
-class RandomizerViewState extends State<RandomizerView> {
-  bool includeOuter = false;
-
-  // Instance dari Algoritma kita
+class RandomizerViewState extends State<RandomizerView>
+    with TickerProviderStateMixin {
+  // Services
   final SmartStylistService _stylistService = SmartStylistService();
   final CatalogService _catalogService = CatalogService();
   final ProfileService _profileService = ProfileService();
 
-  // Data State
-  List<ClothingItem> _myWardrobe = [];
-  OutfitResult? _currentOutfit;
-  bool _isLoading = true;
+  // Data pool per kategori
+  List<ClothingItem> _outers = [];
+  List<ClothingItem> _tops = [];
+  List<ClothingItem> _bottoms = [];
+  List<ClothingItem> _shoes = [];
 
-  // Profil warna user (diambil dari ProfileService, bukan hardcode)
-  String _currentUserSeason = 'Autumn'; // fallback default
+  // PageController per baris
+  late PageController _topController;
+  late PageController _bottomController;
+  late PageController _outerController;
+  late PageController _shoeController;
+
+  // Index yang sedang tampil per baris
+  int _topIndex = 0;
+  int _bottomIndex = 0;
+  int _outerIndex = 0;
+  int _shoeIndex = 0;
+
+  // State
+  bool includeOuter = false;
+  bool _isLoading = true;
+  bool _isShuffling = false;
+  bool _isPerfectMatch = false;
+  String _currentUserSeason =
+      'Unknown'; // Diisi oleh _loadProfile() dari ProfileService
+
+  // Animasi shimmer untuk shuffle
+  late AnimationController _shuffleGlowController;
+  late Animation<double> _shuffleGlow;
 
   @override
   void initState() {
     super.initState();
+    _topController = PageController(viewportFraction: 0.92);
+    _bottomController = PageController(viewportFraction: 0.92);
+    _outerController = PageController(viewportFraction: 0.92);
+    _shoeController = PageController(viewportFraction: 0.92);
+
+    _shuffleGlowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _shuffleGlow = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _shuffleGlowController, curve: Curves.easeInOut),
+    );
+
     _loadProfile();
     _loadWardrobe();
+  }
+
+  @override
+  void dispose() {
+    _outerController.dispose();
+    _topController.dispose();
+    _bottomController.dispose();
+    _shoeController.dispose();
+    _shuffleGlowController.dispose();
+    super.dispose();
   }
 
   /// Public refresh — dipanggil via GlobalKey saat tab Styling aktif
@@ -93,27 +155,47 @@ class RandomizerViewState extends State<RandomizerView> {
     _loadWardrobe();
   }
 
-  /// Muat profil user dari SharedPreferences
   Future<void> _loadProfile() async {
     final profile = await _profileService.getProfile();
     if (profile != null && mounted) {
-      setState(() {
-        _currentUserSeason = profile.season;
-      });
+      setState(() => _currentUserSeason = profile.season);
     }
   }
 
-  // Tarik semua baju dari HP/Supabase saat halaman dibuka
   Future<void> _loadWardrobe() async {
     try {
       final items = await _catalogService.fetchGallery();
+      if (!mounted) return;
       setState(() {
-        _myWardrobe = items;
+        _outers = items.where((i) => i.category == 'Outer').toList();
+        _tops = items.where((i) => i.category == 'Top').toList();
+        _bottoms = items.where((i) => i.category == 'Bottom').toList();
+        _shoes = items.where((i) => i.category == 'Shoes').toList();
+
+        // Reset semua index dan PageView ke 0 agar dot indicator sinkron
+        _topIndex = 0;
+        _bottomIndex = 0;
+        _outerIndex = 0;
+        _shoeIndex = 0;
+
+        if (_topController.hasClients && _tops.isNotEmpty) {
+          _topController.jumpToPage(0);
+        }
+        if (_bottomController.hasClients && _bottoms.isNotEmpty) {
+          _bottomController.jumpToPage(0);
+        }
+        if (_outerController.hasClients && _outers.isNotEmpty) {
+          _outerController.jumpToPage(0);
+        }
+        if (_shoeController.hasClients && _shoes.isNotEmpty) {
+          _shoeController.jumpToPage(0);
+        }
+
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Gagal memuat gallery: $e')));
@@ -121,180 +203,588 @@ class RandomizerViewState extends State<RandomizerView> {
     }
   }
 
-  // FUNGSI SAAT TOMBOL DADU DITEKAN
-  void _rollDice() {
-    if (_myWardrobe.isEmpty) {
+  // ── SHUFFLE ──────────────────────────────────────────────────────────────
+  Future<void> _rollDice() async {
+    if (_tops.isEmpty || _bottoms.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Lemari kamu masih kosong!")),
+        const SnackBar(
+          content: Text('Minimal harus ada 1 Atasan dan 1 Bawahan'),
+        ),
       );
       return;
     }
 
-    // Panggil Algoritma Cerdas
-    OutfitResult? result = _stylistService.rollOutfit(
-      _myWardrobe,
-      _currentUserSeason,
-      includeOuter,
+    setState(() {
+      _isShuffling = true;
+      _isPerfectMatch = false;
+    });
+
+    // Beri peringatan jika profil musim kulit belum dianalisis
+    if (_currentUserSeason == 'Unknown') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Profil musim kulit belum diatur. ' 
+            'Buka Profil dan analisis kulit agar Perfect Match bekerja!',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+
+    // Jalankan algoritma — pass list yang sudah dipisah per kategori
+    final result = _stylistService.rollOutfit(
+      tops: _tops,
+      bottoms: _bottoms,
+      outers: _outers,
+      shoes: _shoes,
+      userSeason: _currentUserSeason,
+      includeOuter: includeOuter,
     );
 
-    if (result != null) {
+    if (result == null) {
+      setState(() => _isShuffling = false);
+      return;
+    }
+
+    // Cari index target di masing-masing list
+    final topTarget = _tops.indexWhere((i) => i.id == result.top.id);
+    final bottomTarget = _bottoms.indexWhere((i) => i.id == result.bottom.id);
+    final outerTarget = result.outer != null
+        ? _outers.indexWhere((i) => i.id == result.outer!.id)
+        : -1;
+    final shoeTarget = result.shoes != null
+        ? _shoes.indexWhere((i) => i.id == result.shoes!.id)
+        : -1;
+
+    // Animasikan semua PageView serentak
+    const duration = Duration(milliseconds: 500);
+    const curve = Curves.easeInOutCubic;
+
+    final futures = <Future>[];
+
+    if (topTarget >= 0 && _topController.hasClients) {
+      futures.add(
+        _topController.animateToPage(
+          topTarget,
+          duration: duration,
+          curve: curve,
+        ),
+      );
+    }
+    if (bottomTarget >= 0 && _bottomController.hasClients) {
+      futures.add(
+        _bottomController.animateToPage(
+          bottomTarget,
+          duration: duration,
+          curve: curve,
+        ),
+      );
+    }
+    if (outerTarget >= 0 && _outerController.hasClients) {
+      futures.add(
+        _outerController.animateToPage(
+          outerTarget,
+          duration: duration,
+          curve: curve,
+        ),
+      );
+    }
+    if (shoeTarget >= 0 && _shoeController.hasClients) {
+      futures.add(
+        _shoeController.animateToPage(
+          shoeTarget,
+          duration: duration,
+          curve: curve,
+        ),
+      );
+    }
+
+    await Future.wait(futures);
+
+    if (mounted) {
       setState(() {
-        _currentOutfit = result;
+        _isShuffling = false;
+        _isPerfectMatch = result.isPerfectMatch;
+        if (outerTarget >= 0) _outerIndex = outerTarget;
+        if (topTarget >= 0) _topIndex = topTarget;
+        if (bottomTarget >= 0) _bottomIndex = bottomTarget;
+        if (shoeTarget >= 0) _shoeIndex = shoeTarget;
       });
 
-      // Tampilkan Efek "Perfect Match" jika algoritmanya bilang True
       if (result.isPerfectMatch) {
-        _showPerfectMatchDialog();
+        _shuffleGlowController.forward(from: 0);
       }
     }
   }
 
-  // Animasi/Popup Bonus untuk User
-  void _showPerfectMatchDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.amber.shade50,
-        title: const Row(
-          children: [
-            Icon(Icons.auto_awesome, color: Colors.amber, size: 30),
-            SizedBox(width: 10),
-            Text(
-              "Perfect Match!",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Text(
-          "Kombinasi pakaian ini sangat cocok dengan kulit $_currentUserSeason kamu!",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Keren!"),
-          ),
-        ],
-      ),
-    );
-  }
-
+  // ── BUILD ───────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
 
     return Column(
       children: [
-        // Toggle Switch
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // ── Slot rows ──
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
             children: [
-              const Text(
-                "Include Outer?",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              _buildCategoryRow(
+                label: 'ATASAN',
+                items: _tops,
+                controller: _topController,
+                currentIndex: _topIndex,
+                onPageChanged: (i) => setState(() => _topIndex = i),
+                accentColor: Colors.blue,
+                icon: Icons.checkroom,
+                emptyHint: 'Tambah Atasan di Wardrobe',
               ),
-              Switch(
-                value: includeOuter,
-                onChanged: (val) {
-                  setState(() => includeOuter = val);
-                },
+              _buildCategoryRow(
+                label: 'BAWAHAN',
+                items: _bottoms,
+                controller: _bottomController,
+                currentIndex: _bottomIndex,
+                onPageChanged: (i) => setState(() => _bottomIndex = i),
+                accentColor: Colors.green,
+                icon: Icons.accessibility_new,
+                emptyHint: 'Tambah Bawahan di Wardrobe',
+              ),
+              // Outer — hanya tampil jika toggle ON
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                child: includeOuter
+                    ? _buildCategoryRow(
+                        label: 'OUTER',
+                        items: _outers,
+                        controller: _outerController,
+                        currentIndex: _outerIndex,
+                        onPageChanged: (i) => setState(() => _outerIndex = i),
+                        accentColor: Colors.orange,
+                        icon: Icons.dry_cleaning,
+                        emptyHint: 'Tambah Outer di Wardrobe',
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              _buildCategoryRow(
+                label: 'SEPATU',
+                items: _shoes,
+                controller: _shoeController,
+                currentIndex: _shoeIndex,
+                onPageChanged: (i) => setState(() => _shoeIndex = i),
+                accentColor: Colors.brown,
+                icon: Icons.ice_skating,
+                emptyHint: 'Tambah Sepatu di Wardrobe',
               ),
             ],
           ),
         ),
 
-        // Area Tampilan Outfit (Grid)
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _currentOutfit == null
-                ? const Center(child: Text("Tekan Dadu untuk Mix & Match!"))
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (includeOuter && _currentOutfit!.outer != null)
-                        _buildOutfitBox("Outer", _currentOutfit!.outer!),
-
-                      const SizedBox(height: 10),
-                      _buildOutfitBox("Atasan", _currentOutfit!.top),
-
-                      const SizedBox(height: 10),
-                      _buildOutfitBox("Bawahan", _currentOutfit!.bottom),
-
-                      const SizedBox(height: 10),
-                      if (_currentOutfit!.shoes != null)
-                        _buildOutfitBox("Sepatu", _currentOutfit!.shoes!),
-                    ],
-                  ),
-          ),
-        ),
-
-        // Tombol Dadu
-        Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: ElevatedButton.icon(
-            onPressed: _rollDice,
-            icon: const Icon(Icons.casino, size: 28),
-            label: const Text("SHUFFLE OUTFIT"),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-              backgroundColor: Colors.deepPurple,
-              foregroundColor: Colors.white,
-              textStyle: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
+        // ── Bottom controls ──
+        _buildBottomControls(),
       ],
     );
   }
 
-  // Widget untuk menampilkan kotak baju yang sudah diacak
-  Widget _buildOutfitBox(String label, ClothingItem item) {
-    bool isLocalImage = !item.imageUrl.startsWith('http');
-
-    return Expanded(
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade300),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-          image: DecorationImage(
-            image: isLocalImage
-                ? FileImage(File(item.imageUrl)) as ImageProvider
-                : NetworkImage(item.imageUrl),
-            fit: BoxFit.cover,
-            // Efek transparan biar teks label tetap terbaca
-            colorFilter: ColorFilter.mode(
-                Colors.white.withValues(alpha: 0.2),
-              BlendMode.lighten,
+  // ── Category Row ────────────────────────────────────────────────────────
+  Widget _buildCategoryRow({
+    required String label,
+    required List<ClothingItem> items,
+    required PageController controller,
+    required int currentIndex,
+    required ValueChanged<int> onPageChanged,
+    required Color accentColor,
+    required IconData icon,
+    required String emptyHint,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Label chip
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: accentColor),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: accentColor,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  items.isEmpty
+                      ? '(kosong)'
+                      : '${currentIndex + 1}/${items.length}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                ),
+              ],
             ),
           ),
-        ),
-        child: Stack(
+
+          // PageView atau empty card
+          SizedBox(
+            height: 140,
+            child: items.isEmpty
+                ? _buildEmptyCard(emptyHint, accentColor)
+                : PageView.builder(
+                    controller: controller,
+                    itemCount: items.length,
+                    onPageChanged: onPageChanged,
+                    itemBuilder: (ctx, i) {
+                      final item = items[i];
+                      return _buildItemCard(item, accentColor);
+                    },
+                  ),
+          ),
+
+          // Dot indicators
+          if (items.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  items.length,
+                  (i) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: i == currentIndex ? 16 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(3),
+                      color: i == currentIndex
+                          ? accentColor
+                          : accentColor.withValues(alpha: 0.25),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── Item Card (di dalam PageView) ───────────────────────────────────────
+  Widget _buildItemCard(ClothingItem item, Color accent) {
+    final isLocal = !item.imageUrl.startsWith('http');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Card(
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
           children: [
-            Positioned(
-              bottom: 8,
-              left: 8,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                color: Colors.black54,
-                child: Text(
-                  "$label: ${item.name}",
-                  style:
-                      const TextStyle(color: Colors.white, fontSize: 12),
+            // Gambar item (60%)
+            Expanded(
+              flex: 3,
+              child: SizedBox.expand(
+                child: isLocal
+                    ? Image.file(
+                        File(item.imageUrl),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _buildBrokenImage(),
+                      )
+                    : Image.network(
+                        item.imageUrl,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (_, child, progress) {
+                          if (progress == null) return child;
+                          return const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, __, ___) => _buildBrokenImage(),
+                      ),
+              ),
+            ),
+            // Info item (40%)
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      item.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        item.season,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: accent,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: item.color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.grey.shade300,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          item.category,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildBrokenImage() {
+    return Container(
+      color: Colors.grey[100],
+      child: const Center(
+        child: Icon(Icons.broken_image, size: 32, color: Colors.grey),
+      ),
+    );
+  }
+
+  // ── Empty Card ──────────────────────────────────────────────────────────
+  Widget _buildEmptyCard(String hint, Color accent) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: accent.withValues(alpha: 0.3), width: 1.5),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.add_circle_outline,
+                size: 32,
+                color: accent.withValues(alpha: 0.4),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                hint,
+                style: TextStyle(
+                  color: accent.withValues(alpha: 0.6),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Bottom Controls ─────────────────────────────────────────────────────
+  Widget _buildBottomControls() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Perfect Match badge (non-intrusive)
+          AnimatedBuilder(
+            animation: _shuffleGlow,
+            builder: (context, child) {
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: _isPerfectMatch
+                    ? Container(
+                        key: const ValueKey('match'),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.amber.shade300,
+                              Colors.orange.shade400,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.amber.withValues(
+                                alpha: 0.4 * _shuffleGlow.value,
+                              ),
+                              blurRadius: 12,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.auto_awesome,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Perfect Match — cocok dengan kulit $_currentUserSeason!',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('no-match')),
+              );
+            },
+          ),
+
+          // Shuffle button + outer toggle
+          Row(
+            children: [
+              // Outer toggle
+              GestureDetector(
+                onTap: () => setState(() => includeOuter = !includeOuter),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: includeOuter
+                        ? Colors.orange.withValues(alpha: 0.12)
+                        : Colors.grey.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: includeOuter
+                          ? Colors.orange.withValues(alpha: 0.4)
+                          : Colors.grey.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.dry_cleaning,
+                        size: 18,
+                        color: includeOuter ? Colors.orange : Colors.grey,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Outer',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: includeOuter
+                              ? Colors.orange[800]
+                              : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Shuffle button (utama)
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _isShuffling ? null : _rollDice,
+                  icon: _isShuffling
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.casino, size: 22),
+                  label: Text(_isShuffling ? 'Shuffling...' : 'SHUFFLE OUTFIT'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.deepPurple.shade300,
+                    disabledForegroundColor: Colors.white70,
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -321,12 +811,6 @@ class _CanvasViewState extends State<CanvasView> {
   final CatalogService _catalogService = CatalogService();
   final LookbookService _lookbookService = LookbookService();
   final List<_CanvasItemData> _canvasItems = [];
-
-  // Key untuk RepaintBoundary — dipakai saat screenshot canvas
-  final GlobalKey _canvasKey = GlobalKey();
-
-  // Flag untuk menyembunyikan tombol hapus saat screenshot
-  bool _isCapturing = false;
 
   // ── Buka bottom sheet untuk pilih item dari wardrobe ────────────────────
   Future<void> _showItemPicker() async {
@@ -368,8 +852,7 @@ class _CanvasViewState extends State<CanvasView> {
                 const SizedBox(height: 12),
                 const Text(
                   'Pilih Item untuk Canvas',
-                  style:
-                      TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -381,28 +864,28 @@ class _CanvasViewState extends State<CanvasView> {
                   child: errorMsg != null
                       ? Center(child: Text('Error: $errorMsg'))
                       : wardrobeItems.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'Lemari masih kosong.\nTambah item di tab Wardrobe dulu.',
-                                textAlign: TextAlign.center,
-                              ),
-                            )
-                          : GridView.builder(
-                              controller: scrollController,
-                              padding: const EdgeInsets.all(12),
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                      ? const Center(
+                          child: Text(
+                            'Lemari masih kosong.\nTambah item di tab Wardrobe dulu.',
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : GridView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(12),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 3,
                                 childAspectRatio: 0.75,
                                 crossAxisSpacing: 8,
                                 mainAxisSpacing: 8,
                               ),
-                              itemCount: wardrobeItems.length,
-                              itemBuilder: (context, index) {
-                                final item = wardrobeItems[index];
-                                return _buildPickerCard(ctx, item);
-                              },
-                            ),
+                          itemCount: wardrobeItems.length,
+                          itemBuilder: (context, index) {
+                            final item = wardrobeItems[index];
+                            return _buildPickerCard(ctx, item);
+                          },
+                        ),
                 ),
               ],
             );
@@ -437,8 +920,7 @@ class _CanvasViewState extends State<CanvasView> {
       },
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -487,22 +969,215 @@ class _CanvasViewState extends State<CanvasView> {
     setState(() => _canvasItems.removeAt(index));
   }
 
+  // ── Decode gambar item ke ui.Image (untuk offscreen render) ────────────
+  Future<ui.Image> _decodeItemImage(ClothingItem item) async {
+    Uint8List bytes;
+    if (item.imageUrl.startsWith('http')) {
+      final uri = Uri.parse(item.imageUrl);
+      final client = HttpClient();
+      final request = await client.getUrl(uri);
+      final response = await request.close();
+      bytes = await consolidateHttpClientResponseBytes(response);
+      client.close();
+    } else {
+      bytes = await File(item.imageUrl).readAsBytes();
+    }
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    return frame.image;
+  }
+
+  /// Helper untuk membaca bytes dari HTTP response
+  static Future<Uint8List> consolidateHttpClientResponseBytes(
+      HttpClientResponse response) {
+    final chunks = <List<int>>[];
+    final completer = Completer<Uint8List>();
+    response.listen(
+      chunks.add,
+      onDone: () => completer.complete(
+        Uint8List.fromList(chunks.expand((c) => c).toList()),
+      ),
+      onError: completer.completeError,
+      cancelOnError: true,
+    );
+    return completer.future;
+  }
+
+  // ── Capture canvas secara offscreen (memuat SEMUA item) ────────────────
+  Future<Uint8List> _captureCanvas() async {
+    const itemWidth = 120.0;
+    const itemHeight = 140.0;
+    const padding = 20.0;
+
+    // 1. Hitung bounding box semua item
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+    for (final d in _canvasItems) {
+      if (d.position.dx < minX) minX = d.position.dx;
+      if (d.position.dy < minY) minY = d.position.dy;
+      if (d.position.dx + itemWidth > maxX) maxX = d.position.dx + itemWidth;
+      if (d.position.dy + itemHeight > maxY) maxY = d.position.dy + itemHeight;
+    }
+
+    final contentW = maxX - minX + padding * 2;
+    final contentH = maxY - minY + padding * 2;
+
+    // 2. Decode semua gambar ke PNG bytes
+    final decodedImageBytes = <Uint8List>[];
+    for (final d in _canvasItems) {
+      final uiImg = await _decodeItemImage(d.item);
+      final byteData = await uiImg.toByteData(format: ui.ImageByteFormat.png);
+      decodedImageBytes.add(byteData!.buffer.asUint8List());
+    }
+
+    // 3. Bangun render tree offscreen
+    final boundary = RenderRepaintBoundary();
+    final stack = RenderStack(textDirection: ui.TextDirection.ltr);
+    boundary.child = stack;
+
+    // Background (dengan ukuran eksplisit = ukuran canvas)
+    final bg = RenderConstrainedBox(
+      additionalConstraints: BoxConstraints.tightFor(
+        width: contentW,
+        height: contentH,
+      ),
+      child: RenderDecoratedBox(
+        decoration: BoxDecoration(color: Colors.grey.shade100),
+      ),
+    );
+    stack.add(bg);
+
+    // Items
+    for (int i = 0; i < _canvasItems.length; i++) {
+      final d = _canvasItems[i];
+      final relX = d.position.dx - minX + padding;
+      final relY = d.position.dy - minY + padding;
+
+      // Image (BoxFit.contain di dalam container putih)
+      final imageRender = RenderDecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          image: DecorationImage(
+            image: MemoryImage(decodedImageBytes[i]),
+            fit: BoxFit.contain,
+          ),
+        ),
+      );
+
+      // Label nama
+      final tp = TextPainter(
+        text: TextSpan(
+          text: d.item.name,
+          style: const TextStyle(color: Colors.white, fontSize: 10),
+        ),
+        textDirection: ui.TextDirection.ltr,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        ellipsis: '...',
+      )..layout(maxWidth: itemWidth);
+
+      final labelBg = RenderDecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0x8A000000),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+        ),
+        child: RenderPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: RenderParagraph(tp.text!, textDirection: ui.TextDirection.ltr),
+        ),
+      );
+
+      // Stack item: image + label overlay
+      final itemStack = RenderStack(textDirection: ui.TextDirection.ltr);
+      itemStack.add(imageRender);
+
+      // Label di bawah (positioned bottom)
+      final labelPositioned = RenderPositionedBox(
+        alignment: Alignment.bottomCenter,
+        child: labelBg,
+      );
+      // Bungkus dalam Stack agar label overlay di bawah
+      final overlayStack = RenderStack(textDirection: ui.TextDirection.ltr);
+      overlayStack.add(itemStack);
+      overlayStack.add(labelPositioned);
+
+      // Border + shadow container
+      final borderedBox = RenderDecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: d.item.color, width: 2),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 6,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: RenderClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: overlayStack,
+        ),
+      );
+
+      // Positioned dalam canvas stack
+      final positioned = RenderPositionedBox(
+        alignment: Alignment.topLeft,
+        widthFactor: null,
+        heightFactor: null,
+        child: borderedBox,
+      );
+
+      // Add ke stack DULU, baru set offset (agar tidak ditimpa setupParentData)
+      stack.add(positioned);
+      final parentData = StackParentData();
+      parentData.offset = Offset(relX, relY);
+      positioned.parentData = parentData;
+    }
+
+    // 4. Layout + Paint
+    boundary.layout(
+      BoxConstraints.tightFor(width: contentW, height: contentH),
+    );
+    final offsetLayer = OffsetLayer();
+    boundary.paint(PaintingContext(offsetLayer, Rect.fromLTWH(0, 0, contentW, contentH)), Offset.zero);
+
+    // 5. Capture
+    final image = await boundary.toImage(pixelRatio: 2.0);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    for (final img in decodedImages) {
+      img.dispose();
+    }
+
+    return byteData!.buffer.asUint8List();
+  }
+
   // ── Simpan canvas ke Lookbook ─────────────────────────────────────────
   Future<void> _saveToLookbook() async {
     if (_canvasItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Canvas masih kosong! Tambah item dulu.'),
-        ),
+        const SnackBar(content: Text('Canvas masih kosong! Tambah item dulu.')),
       );
       return;
     }
 
-    // Sembunyikan tombol hapus agar tidak ikut ter-capture di screenshot
-    setState(() => _isCapturing = true);
+    // Capture gambar canvas (offscreen, mencakup semua item)
+    Uint8List? capturedBytes;
+    try {
+      capturedBytes = await _captureCanvas();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal capture canvas: $e')),
+        );
+      }
+      return;
+    }
 
-    // Tunggu frame berikutnya agar UI sempat rebuild tanpa tombol hapus
-    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -511,14 +1186,11 @@ class _CanvasViewState extends State<CanvasView> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => _SaveLookbookSheet(
-        canvasKey: _canvasKey,
+        imageBytes: capturedBytes!,
         itemIds: _canvasItems.map((d) => d.item.id).toList(),
         lookbookService: _lookbookService,
       ),
     );
-
-    // Tampilkan kembali tombol hapus setelah bottom sheet ditutup
-    if (mounted) setState(() => _isCapturing = false);
 
     if (result == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -534,52 +1206,44 @@ class _CanvasViewState extends State<CanvasView> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // ── Canvas area (dibungkus RepaintBoundary untuk screenshot) ──
+        // ── Canvas area ──
         Positioned.fill(
-          child: RepaintBoundary(
-            key: _canvasKey,
-            child: Stack(
-              children: [
-                // Latar Belakang Canvas
-                Container(color: Colors.grey.shade100),
+          child: Stack(
+            children: [
+              // Latar Belakang Canvas
+              Container(color: Colors.grey.shade100),
 
-                // Hint jika canvas kosong
-                if (_canvasItems.isEmpty)
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.gesture,
-                          size: 60,
-                          color: Colors.grey[300],
+              // Hint jika canvas kosong
+              if (_canvasItems.isEmpty)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.gesture, size: 60, color: Colors.grey[300]),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Tekan "Add Item" untuk menambahkan\npakaian ke canvas',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Tekan "Add Item" untuk menambahkan\npakaian ke canvas',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                ),
 
-                // Item-item di canvas (bisa digeser)
-                for (int i = 0; i < _canvasItems.length; i++)
-                  _CanvasItemWidget(
-                    key: ValueKey('${_canvasItems[i].item.id}_$i'),
-                    data: _canvasItems[i],
-                    hideDeleteButton: _isCapturing,
-                    onPositionChanged: (newPos) {
-                      _canvasItems[i].position = newPos;
-                    },
-                    onDelete: () => _removeFromCanvas(i),
-                  ),
-              ],
-            ),
+              // Item-item di canvas (bisa digeser)
+              for (int i = 0; i < _canvasItems.length; i++)
+                _CanvasItemWidget(
+                  key: ValueKey('${_canvasItems[i].item.id}_$i'),
+                  data: _canvasItems[i],
+                  onPositionChanged: (newPos) {
+                    _canvasItems[i].position = newPos;
+                  },
+                  onDelete: () => _removeFromCanvas(i),
+                ),
+            ],
           ),
         ),
 
@@ -618,8 +1282,7 @@ class _CanvasViewState extends State<CanvasView> {
             top: 12,
             right: 12,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: Colors.deepPurple.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(20),
@@ -692,31 +1355,29 @@ class _CanvasItemWidgetState extends State<_CanvasItemWidget> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: item.color, width: 2),
             boxShadow: const [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 6,
-                spreadRadius: 1,
-              ),
+              BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1),
             ],
           ),
           child: Stack(
             children: [
-              // Gambar item
+              // Gambar item — gunakan contain agar tidak terpotong
+              // saat screenshot disimpan ke Lookbook
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
+                child: Container(
                   width: 120,
                   height: 140,
+                  color: Colors.white,
                   child: isLocalImage
                       ? Image.file(
                           File(item.imageUrl),
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) =>
                               const Center(child: Icon(Icons.broken_image)),
                         )
                       : Image.network(
                           item.imageUrl,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) =>
                               const Center(child: Icon(Icons.broken_image)),
                         ),
@@ -743,10 +1404,7 @@ class _CanvasItemWidgetState extends State<_CanvasItemWidget> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
                   ),
                 ),
               ),
@@ -783,12 +1441,12 @@ class _CanvasItemWidgetState extends State<_CanvasItemWidget> {
 // Bottom Sheet: Form simpan ke Lookbook
 // ─────────────────────────────────────────────────────────────────────────────
 class _SaveLookbookSheet extends StatefulWidget {
-  final GlobalKey canvasKey;
+  final Uint8List imageBytes;
   final List<String> itemIds;
   final LookbookService lookbookService;
 
   const _SaveLookbookSheet({
-    required this.canvasKey,
+    required this.imageBytes,
     required this.itemIds,
     required this.lookbookService,
   });
@@ -844,26 +1502,15 @@ class _SaveLookbookSheetState extends State<_SaveLookbookSheet> {
     setState(() => _isSaving = true);
 
     try {
-      // 1. Capture screenshot dari RepaintBoundary canvas
-      final boundary = widget.canvasKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
-      if (boundary == null) throw Exception('Canvas tidak ditemukan');
-
-      final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
-      final ByteData? byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) throw Exception('Gagal mengambil gambar canvas');
-      final Uint8List bytes = byteData.buffer.asUint8List();
-
-      // 2. Simpan file PNG ke direktori dokumen app
+      // 1. Simpan file PNG ke direktori dokumen app
       final dir = await getApplicationDocumentsDirectory();
       final now = DateTime.now();
       final timestamp = now.millisecondsSinceEpoch;
       final fileName = 'lookbook_$timestamp.png';
       final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(bytes);
+      await file.writeAsBytes(widget.imageBytes);
 
-      // 3. Buat & simpan LookbookItem (pakai timestamp yang sama)
+      // 2. Buat & simpan LookbookItem (pakai timestamp yang sama)
       final lookbookItem = LookbookItem(
         id: 'lb_$timestamp',
         name: name,
@@ -877,9 +1524,9 @@ class _SaveLookbookSheetState extends State<_SaveLookbookSheet> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -929,10 +1576,7 @@ class _SaveLookbookSheetState extends State<_SaveLookbookSheet> {
                 const SizedBox(width: 12),
                 const Text(
                   'Simpan ke Lookbook',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -959,8 +1603,10 @@ class _SaveLookbookSheetState extends State<_SaveLookbookSheet> {
               onTap: _pickDate,
               borderRadius: BorderRadius.circular(12),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   border: Border.all(
                     color: _scheduledDate != null
@@ -986,8 +1632,9 @@ class _SaveLookbookSheetState extends State<_SaveLookbookSheet> {
                       child: Text(
                         _scheduledDate == null
                             ? 'Jadwalkan pemakaian (opsional)'
-                            : DateFormat('EEEE, d MMMM yyyy')
-                                .format(_scheduledDate!),
+                            : DateFormat(
+                                'EEEE, d MMMM yyyy',
+                              ).format(_scheduledDate!),
                         style: TextStyle(
                           color: _scheduledDate != null
                               ? Colors.deepPurple

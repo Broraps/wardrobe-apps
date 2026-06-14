@@ -30,12 +30,15 @@ class ProfileService {
   }
 }
 
-/// Model data profil warna musim user
+/// Model data profil warna musim user — berdasarkan Seasonal Color Theory
+/// dengan 3 input: nuansa kulit, warna rambut, warna mata.
 class UserColorProfile {
   final String season; // 'Winter', 'Summer', 'Spring', 'Autumn'
   final String undertone; // 'Warm', 'Cool'
   final String brightness; // 'Light', 'Deep'
-  final int skinColorValue; // ARGB int dari warna kulit terdeteksi
+  final int skinColorValue; // ARGB int dari warna kulit
+  final int hairColorValue; // ARGB int dari warna rambut
+  final int eyeColorValue; // ARGB int dari warna mata
   final String selfiePath; // path foto selfie
   final DateTime analyzedAt;
 
@@ -44,17 +47,23 @@ class UserColorProfile {
     required this.undertone,
     required this.brightness,
     required this.skinColorValue,
+    required this.hairColorValue,
+    required this.eyeColorValue,
     required this.selfiePath,
     required this.analyzedAt,
   });
 
   Color get skinColor => Color(skinColorValue);
+  Color get hairColor => Color(hairColorValue);
+  Color get eyeColor => Color(eyeColorValue);
 
   Map<String, dynamic> toJson() => {
         'season': season,
         'undertone': undertone,
         'brightness': brightness,
         'skinColorValue': skinColorValue,
+        'hairColorValue': hairColorValue,
+        'eyeColorValue': eyeColorValue,
         'selfiePath': selfiePath,
         'analyzedAt': analyzedAt.toIso8601String(),
       };
@@ -65,67 +74,59 @@ class UserColorProfile {
       undertone: json['undertone'] as String,
       brightness: json['brightness'] as String,
       skinColorValue: json['skinColorValue'] as int,
+      // Backward-compat: data lama belum punya hairColorValue/eyeColorValue
+      hairColorValue: (json['hairColorValue'] as int?) ?? 0xFF808080,
+      eyeColorValue: (json['eyeColorValue'] as int?) ?? 0xFF808080,
       selfiePath: json['selfiePath'] as String,
       analyzedAt: DateTime.parse(json['analyzedAt'] as String),
     );
   }
 
-  /// Deteksi profil warna musim dari warna kulit (HSV Rule-Based).
-  /// Menggunakan logika yang sama persis dengan _guessSeasonFromColor di AddItemPage.
-  static UserColorProfile analyzeFromSkinColor({
+  // ═══════════════════════════════════════════════════════════════════════
+  // SEASONAL COLOR THEORY ANALYSIS — 3-Input Algorithm
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // Berdasarkan Seasonal Color Theory:
+  //   - UNDERTONE ditentukan oleh kombinasi warna kulit (50%), rambut (25%), mata (25%)
+  //   - KECERAHAN ditentukan oleh Value rata-rata kulit
+  //   - Warm + Light → Spring  |  Warm + Deep → Autumn
+  //   - Cool + Light → Summer  |  Cool + Deep → Winter
+  //
+  // Referensi: teori 4-Season Color Analysis (Carole Jackson, 1980)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  static UserColorProfile analyzeFromColors({
     required Color skinColor,
+    required Color hairColor,
+    required Color eyeColor,
     required String selfiePath,
   }) {
-    final hsv = HSVColor.fromColor(skinColor);
-    final double hue = hsv.hue;
-    final double saturation = hsv.saturation;
-    final double value = hsv.value;
+    // ── 1. Hitung warmth score per komponen (0.0 = Cool, 1.0 = Warm) ──
 
-    // Deteksi Undertone: Warm vs Cool
-    // Warm: Merah, Oranye, Kuning (0-50, 330-360)
-    // Cool: Biru, Ungu, Cyan (150-270)
-    // Netral/skin-toned: sisanya (50-150, 270-330)
-    bool isWarm =
-        (hue >= 0 && hue < 50) || (hue > 330 && hue <= 360);
-    bool isCool = (hue >= 150 && hue <= 270);
+    final skinWarmth = _warmthScore(skinColor);
+    final hairWarmth = _warmthScore(hairColor);
+    final eyeWarmth = _warmthScore(eyeColor);
 
-    // Untuk warna kulit, hue biasanya di range warm (10-40)
-    // atau netral. Jika di area netral, tentukan dari saturation.
-    if (!isWarm && !isCool) {
-      // Area netral (50-150 atau 270-330)
-      // Skin tone biasanya jatuh di sini (hue ~10-45 untuk kulit)
-      // Gunakan saturation sebagai penentu:
-      // Saturation tinggi -> Warm, Saturation rendah -> Cool
-      isWarm = saturation >= 0.3;
-      isCool = !isWarm;
-    }
+    // Bobot: Kulit 50%, Rambut 25%, Mata 25%
+    final totalWarmth = (skinWarmth * 0.50) + (hairWarmth * 0.25) + (eyeWarmth * 0.25);
 
-    String undertone = isWarm ? 'Warm' : 'Cool';
+    // Threshold: > 0.5 = Warm, <= 0.5 = Cool
+    final bool isWarm = totalWarmth > 0.5;
+    final String undertone = isWarm ? 'Warm' : 'Cool';
 
-    // Deteksi Kecerahan: Light vs Deep
-    // Value tinggi (cerah) vs value rendah (gelap)
-    bool isLight = value >= 0.6;
-    String brightness = isLight ? 'Light' : 'Deep';
+    // ── 2. Deteksi Kecerahan dari kulit ──
 
-    // Tentukan Season berdasarkan kombinasi
+    final skinHsv = HSVColor.fromColor(skinColor);
+    final bool isLight = skinHsv.value >= 0.55;
+    final String brightness = isLight ? 'Light' : 'Deep';
+
+    // ── 3. Tentukan Season ──
+
     String season;
     if (isWarm) {
-      if (isLight) {
-        // Kulit Cerah & Warm -> Spring
-        season = 'Spring';
-      } else {
-        // Kulit Gelap & Warm -> Autumn
-        season = 'Autumn';
-      }
+      season = isLight ? 'Spring' : 'Autumn';
     } else {
-      // Cool
-      if (isLight) {
-        // Kulit Cerah & Cool -> Summer
-        season = 'Summer';
-      } else {
-        // Kulit Gelap/Kontras & Cool -> Winter
-        season = 'Winter';
-      }
+      season = isLight ? 'Summer' : 'Winter';
     }
 
     return UserColorProfile(
@@ -133,8 +134,52 @@ class UserColorProfile {
       undertone: undertone,
       brightness: brightness,
       skinColorValue: skinColor.toARGB32(),
+      hairColorValue: hairColor.toARGB32(),
+      eyeColorValue: eyeColor.toARGB32(),
       selfiePath: selfiePath,
       analyzedAt: DateTime.now(),
     );
+  }
+
+  /// Hitung "warmth score" sebuah warna (0.0 = sangat Cool, 1.0 = sangat Warm).
+  ///
+  /// Logika HSV:
+  /// - Hue 0-60 atau 330-360 (merah/oranye/kuning) → Warm
+  /// - Hue 150-270 (biru/ungu/cyan) → Cool
+  /// - Area netral (60-150, 270-330) → tentukan dari saturation
+  ///
+  /// Warna netral (saturasi sangat rendah: hitam/putih/abu) → netral (0.5)
+  static double _warmthScore(Color color) {
+    final hsv = HSVColor.fromColor(color);
+    final double hue = hsv.hue;
+    final double saturation = hsv.saturation;
+    final double value = hsv.value;
+
+    // Warna hampir netral (abu-abu/hitam/putih) → score netral
+    if (saturation < 0.10) return 0.5;
+    if (value < 0.10) return 0.5; // Hitam pekat
+
+    // Warm zones
+    if ((hue >= 0 && hue < 60) || (hue > 330 && hue <= 360)) {
+      // Semakin saturated dan semakin dekat ke 30° (oranye), semakin warm
+      return 0.6 + (saturation * 0.4); // range 0.6 - 1.0
+    }
+
+    // Cool zones
+    if (hue >= 150 && hue <= 270) {
+      // Semakin saturated, semakin cool
+      return 0.4 - (saturation * 0.4); // range 0.4 - 0.0
+    }
+
+    // Transisi zones (60-150 → kuning-hijau, 270-330 → ungu-merah)
+    if (hue >= 60 && hue < 150) {
+      // Hijau-kuning: transisi dari warm ke cool
+      final t = (hue - 60) / 90; // 0 di hue=60, 1 di hue=150
+      return 0.7 - (t * 0.4); // 0.7 → 0.3
+    }
+
+    // 270-330: ungu-merah muda
+    final t = (hue - 270) / 60; // 0 di hue=270, 1 di hue=330
+    return 0.3 + (t * 0.3); // 0.3 → 0.6
   }
 }

@@ -58,7 +58,14 @@ class _MainScreenState extends State<MainScreen> {
 
   late final List<Widget> _pages = [
     HomePage(key: _homeKey),             // Tab 0: Styling
-    PlannerPage(key: _plannerKey),       // Tab 1: Planner
+    PlannerPage(
+      key: _plannerKey,
+      onNavigateToCanvas: () {
+        // Pindah ke tab Styling (index 0), lalu buka sub-tab Canvas DIY
+        setState(() => _currentIndex = 0);
+        _homeKey.currentState?.openCanvasTab();
+      },
+    ),                                   // Tab 1: Planner
     const WardrobePage(),                // Tab 2: Wardrobe
     LookbookPage(key: _lookbookKey),     // Tab 3: Lookbook
     ProfilePage(key: _profileKey),       // Tab 4: Profile

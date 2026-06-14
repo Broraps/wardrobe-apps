@@ -53,25 +53,15 @@ class SmartStylistService {
   }
 
   // 2. FUNGSI UTAMA: Generate Outfit (The Smart Randomizer)
-  OutfitResult? rollOutfit(
-    List<ClothingItem> wardrobe,
-    String userSeason,
-    bool includeOuter,
-  ) {
-    // Pisahkan baju berdasarkan kategori
-    List<ClothingItem> tops = wardrobe
-        .where((i) => i.category == 'Top')
-        .toList();
-    List<ClothingItem> bottoms = wardrobe
-        .where((i) => i.category == 'Bottom')
-        .toList();
-    List<ClothingItem> outers = wardrobe
-        .where((i) => i.category == 'Outer')
-        .toList();
-    List<ClothingItem> shoes = wardrobe
-        .where((i) => i.category == 'Shoes')
-        .toList();
-
+  //    Menerima list yang sudah dipisah per kategori agar tidak redundant.
+  OutfitResult? rollOutfit({
+    required List<ClothingItem> tops,
+    required List<ClothingItem> bottoms,
+    required List<ClothingItem> outers,
+    required List<ClothingItem> shoes,
+    required String userSeason,
+    required bool includeOuter,
+  }) {
     // Jika atasan atau bawahan kosong, batalkan
     if (tops.isEmpty || bottoms.isEmpty) return null;
 

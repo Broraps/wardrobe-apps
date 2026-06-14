@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:palette_generator/palette_generator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../components/ColorPickerDialog.dart';
 import '../services/ProfileService.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -22,6 +22,12 @@ class ProfilePageState extends State<ProfilePage> {
   UserColorProfile? _profile;
   bool _isLoading = true;
   bool _isAnalyzing = false;
+
+  // ── State untuk color picking step (setelah foto diambil) ──
+  String? _selfieSavedPath; // path file selfie yang sudah disimpan
+  Color? _pickedSkinColor;
+  Color? _pickedHairColor;
+  Color? _pickedEyeColor;
 
   @override
   void initState() {
@@ -44,62 +50,111 @@ class ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // ── Ambil selfie dan analisis warna kulit ─────────────────────────────
+  // ── Step 1: Ambil foto selfie ─────────────────────────────────────────
   Future<void> _takeSelfie(ImageSource source) async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(
       source: source,
       maxWidth: 600,
-      preferredCameraDevice: CameraDevice.front, // Kamera depan untuk selfie
+      preferredCameraDevice: CameraDevice.front,
     );
 
     if (pickedFile == null) return;
 
-    setState(() => _isAnalyzing = true);
-
     try {
       final imageFile = File(pickedFile.path);
 
-      // 1. Simpan selfie ke direktori dokumen app (permanen)
+      // Simpan selfie ke direktori dokumen app (permanen)
       final directory = await getApplicationDocumentsDirectory();
       final fileName =
           'selfie_${DateTime.now().millisecondsSinceEpoch}${p.extension(imageFile.path)}';
       final savedPath = '${directory.path}/$fileName';
       await imageFile.copy(savedPath);
 
-      // 2. Ekstrak warna dominan dari foto (sama seperti AddItemPage)
-      final PaletteGenerator generator =
-          await PaletteGenerator.fromImageProvider(
-        FileImage(File(savedPath)),
-        size: const Size(200, 200),
-        maximumColorCount: 10,
+      // Pindah ke step color picking — reset semua warna
+      if (mounted) {
+        setState(() {
+          _selfieSavedPath = savedPath;
+          _pickedSkinColor = null;
+          _pickedHairColor = null;
+          _pickedEyeColor = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan foto: $e')),
+        );
+      }
+    }
+  }
+
+  // ── Step 2: Pick warna dari gambar ────────────────────────────────────
+  Future<void> _pickColorFor(String target) async {
+    if (_selfieSavedPath == null) return;
+
+    final initialColor = switch (target) {
+      'skin' => _pickedSkinColor ?? Colors.grey,
+      'hair' => _pickedHairColor ?? Colors.grey,
+      'eye' => _pickedEyeColor ?? Colors.grey,
+      _ => Colors.grey,
+    };
+
+    final picked = await ColorPickerDialog.show(
+      context,
+      _selfieSavedPath!,
+      initialColor,
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        switch (target) {
+          case 'skin':
+            _pickedSkinColor = picked;
+            break;
+          case 'hair':
+            _pickedHairColor = picked;
+            break;
+          case 'eye':
+            _pickedEyeColor = picked;
+            break;
+        }
+      });
+    }
+  }
+
+  // ── Step 3: Jalankan analisis ─────────────────────────────────────────
+  Future<void> _runAnalysis() async {
+    if (_selfieSavedPath == null ||
+        _pickedSkinColor == null ||
+        _pickedHairColor == null ||
+        _pickedEyeColor == null) {
+      return;
+    }
+
+    setState(() => _isAnalyzing = true);
+
+    try {
+      final profile = UserColorProfile.analyzeFromColors(
+        skinColor: _pickedSkinColor!,
+        hairColor: _pickedHairColor!,
+        eyeColor: _pickedEyeColor!,
+        selfiePath: _selfieSavedPath!,
       );
 
-      // Ambil warna kulit — prioritas: dominant > vibrant > muted
-      Color skinColor = generator.dominantColor?.color ??
-          generator.vibrantColor?.color ??
-          generator.mutedColor?.color ??
-          Colors.grey;
-
-      // 3. Analisis warna kulit menggunakan logika HSV
-      final profile = UserColorProfile.analyzeFromSkinColor(
-        skinColor: skinColor,
-        selfiePath: savedPath,
-      );
-
-      // 4. Simpan ke SharedPreferences
       await _profileService.saveProfile(profile);
 
       if (mounted) {
         setState(() {
           _profile = profile;
           _isAnalyzing = false;
+          _selfieSavedPath = null; // keluar dari color picking step
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '✨ Berdasarkan deteksi warna kulit, profil Anda adalah: ${profile.season.toUpperCase()}',
+              '✨ Berdasarkan analisis 3 warna, profil Anda adalah: ${profile.season.toUpperCase()}',
             ),
             backgroundColor: Colors.deepPurple,
             duration: const Duration(seconds: 4),
@@ -215,6 +270,7 @@ class ProfilePageState extends State<ProfilePage> {
     if (mounted) {
       setState(() {
         _profile = null;
+        _selfieSavedPath = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profil berhasil di-reset')),
@@ -233,7 +289,13 @@ class ProfilePageState extends State<ProfilePage> {
         title: const Text('Profil Warna'),
         centerTitle: false,
         actions: [
-          if (_profile != null)
+          if (_selfieSavedPath != null)
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'Batal',
+              onPressed: () => setState(() => _selfieSavedPath = null),
+            ),
+          if (_profile != null && _selfieSavedPath == null)
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Analisis Ulang',
@@ -243,11 +305,17 @@ class ProfilePageState extends State<ProfilePage> {
       ),
       body: _isAnalyzing
           ? _buildAnalyzingState()
-          : _profile == null
-              ? _buildEmptyState()
-              : _buildProfileResult(),
+          : _selfieSavedPath != null
+              ? _buildColorPickingStep()
+              : _profile == null
+                  ? _buildEmptyState()
+                  : _buildProfileResult(),
     );
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // UI STATES
+  // ═══════════════════════════════════════════════════════════════════════
 
   // ── Tampilan saat sedang menganalisis ─────────────────────────────────
   Widget _buildAnalyzingState() {
@@ -267,7 +335,7 @@ class ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Menganalisis Warna Kulit...',
+              'Menganalisis Profil Warna...',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -275,7 +343,7 @@ class ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Mendeteksi undertone dan menentukan\nprofil warna musim Anda',
+              'Menghitung undertone dari kulit, rambut,\ndan mata untuk menentukan season Anda',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey[600]),
             ),
@@ -308,7 +376,7 @@ class ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Analisis Warna Kulit',
+              'Seasonal Color Analysis',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -316,8 +384,12 @@ class ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Ambil foto selfie di tempat terang untuk\nmendeteksi profil warna musim Anda.\n\n'
-              'Aplikasi akan menganalisis warna kulit\nmenggunakan algoritma Color Season Analysis.',
+              'Ambil foto selfie di tempat terang, lalu tentukan '
+              'warna kulit, rambut, dan mata Anda secara manual '
+              'dari foto tersebut.\n\n'
+              'Aplikasi akan menganalisis 3 warna tersebut '
+              'menggunakan Seasonal Color Theory untuk menentukan '
+              'profil warna musim Anda.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.grey[600],
@@ -347,7 +419,247 @@ class ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ── Tampilan hasil profil ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // STEP 2: COLOR PICKING — user pick 3 warna dari foto
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildColorPickingStep() {
+    final allPicked = _pickedSkinColor != null &&
+        _pickedHairColor != null &&
+        _pickedEyeColor != null;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          // ── Preview foto selfie ──
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              height: 220,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Image.file(
+                File(_selfieSavedPath!),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Instruksi ──
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.deepPurple.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.deepPurple.withValues(alpha: 0.15),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    size: 20, color: Colors.deepPurple),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Ketuk tombol "Pick" pada setiap baris untuk mengambil warna dari foto di atas.',
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── 3 Color Picker Rows ──
+          _buildColorPickRow(
+            label: 'Nuansa Kulit',
+            subtitle: 'Area wajah / leher',
+            icon: Icons.face,
+            pickedColor: _pickedSkinColor,
+            onPick: () => _pickColorFor('skin'),
+            accentColor: Colors.orange.shade700,
+          ),
+          const SizedBox(height: 10),
+          _buildColorPickRow(
+            label: 'Warna Rambut',
+            subtitle: 'Area rambut yang natural',
+            icon: Icons.content_cut,
+            pickedColor: _pickedHairColor,
+            onPick: () => _pickColorFor('hair'),
+            accentColor: Colors.brown.shade600,
+          ),
+          const SizedBox(height: 10),
+          _buildColorPickRow(
+            label: 'Warna Mata',
+            subtitle: 'Area iris mata',
+            icon: Icons.visibility,
+            pickedColor: _pickedEyeColor,
+            onPick: () => _pickColorFor('eye'),
+            accentColor: Colors.blue.shade600,
+          ),
+          const SizedBox(height: 24),
+
+          // ── Tombol Analisis ──
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: allPicked ? _runAnalysis : null,
+              icon: const Icon(Icons.auto_awesome, size: 20),
+              label: const Text('ANALISIS SEKARANG'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                disabledForegroundColor: Colors.grey.shade500,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          if (!allPicked)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Pilih warna untuk ketiga komponen di atas',
+                style: TextStyle(color: Colors.grey[500], fontSize: 12),
+              ),
+            ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  /// Baris input warna — dengan tombol Pick yang membuka ColorPickerDialog
+  Widget _buildColorPickRow({
+    required String label,
+    required String subtitle,
+    required IconData icon,
+    required Color? pickedColor,
+    required VoidCallback onPick,
+    required Color accentColor,
+  }) {
+    final bool hasPicked = pickedColor != null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: hasPicked
+            ? accentColor.withValues(alpha: 0.05)
+            : Colors.grey.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasPicked
+              ? accentColor.withValues(alpha: 0.3)
+              : Colors.grey.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Icon
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: hasPicked
+                  ? accentColor.withValues(alpha: 0.1)
+                  : Colors.grey.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 20, color: hasPicked ? accentColor : Colors.grey),
+          ),
+          const SizedBox(width: 12),
+
+          // Label & subtitle
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: hasPicked ? Colors.black87 : Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Lingkaran warna hasil pick
+          if (hasPicked)
+            Container(
+              width: 32,
+              height: 32,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: pickedColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black12, blurRadius: 4),
+                ],
+              ),
+            ),
+
+          // Tombol Pick
+          SizedBox(
+            height: 36,
+            child: ElevatedButton.icon(
+              onPressed: onPick,
+              icon: Icon(
+                hasPicked ? Icons.edit : Icons.colorize,
+                size: 14,
+              ),
+              label: Text(hasPicked ? 'Ubah' : 'Pick'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: hasPicked ? accentColor : Colors.deepPurple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // HASIL PROFIL
+  // ═══════════════════════════════════════════════════════════════════════
   Widget _buildProfileResult() {
     final profile = _profile!;
     final seasonData = _seasonInfo[profile.season]!;
@@ -438,7 +750,7 @@ class ProfilePageState extends State<ProfilePage> {
             child: Column(
               children: [
                 Text(
-                  'Berdasarkan deteksi warna kulit,\nprofil Anda adalah:',
+                  'Berdasarkan analisis warna kulit, rambut,\ndan mata, profil Anda adalah:',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.grey[600],
@@ -473,7 +785,7 @@ class ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 20),
 
-          // ── Detail Analisis ──
+          // ── Detail Analisis (3 warna) ──
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -511,20 +823,29 @@ class ProfilePageState extends State<ProfilePage> {
                       : Colors.brown,
                 ),
                 const Divider(height: 20),
+                // 3 warna yang dianalisis
                 _detailRow(
-                  'Warna Kulit Terdeteksi',
+                  'Nuansa Kulit',
                   '',
-                  icon: Icons.palette,
-                  iconColor: Colors.deepPurple,
-                  trailing: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: profile.skinColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                  ),
+                  icon: Icons.face,
+                  iconColor: Colors.orange.shade700,
+                  trailing: _colorCircle(profile.skinColor),
+                ),
+                const Divider(height: 20),
+                _detailRow(
+                  'Warna Rambut',
+                  '',
+                  icon: Icons.content_cut,
+                  iconColor: Colors.brown.shade600,
+                  trailing: _colorCircle(profile.hairColor),
+                ),
+                const Divider(height: 20),
+                _detailRow(
+                  'Warna Mata',
+                  '',
+                  icon: Icons.visibility,
+                  iconColor: Colors.blue.shade600,
+                  trailing: _colorCircle(profile.eyeColor),
                 ),
                 const Divider(height: 20),
                 _detailRow(
@@ -623,6 +944,20 @@ class ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 32),
         ],
+      ),
+    );
+  }
+
+  // ── Helper widgets ────────────────────────────────────────────────────
+
+  Widget _colorCircle(Color color) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.grey.shade300),
       ),
     );
   }
