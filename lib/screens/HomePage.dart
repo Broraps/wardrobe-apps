@@ -1027,6 +1027,7 @@ class _CanvasViewState extends State<CanvasView> {
     for (final d in _canvasItems) {
       final uiImg = await _decodeItemImage(d.item);
       final byteData = await uiImg.toByteData(format: ui.ImageByteFormat.png);
+      uiImg.dispose(); // Dispose ui.Image setelah dikonversi ke bytes
       decodedImageBytes.add(byteData!.buffer.asUint8List());
     }
 
@@ -1148,9 +1149,6 @@ class _CanvasViewState extends State<CanvasView> {
     final image = await boundary.toImage(pixelRatio: 2.0);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();
-    for (final img in decodedImages) {
-      img.dispose();
-    }
 
     return byteData!.buffer.asUint8List();
   }

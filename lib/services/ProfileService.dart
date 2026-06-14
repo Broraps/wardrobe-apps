@@ -58,15 +58,15 @@ class UserColorProfile {
   Color get eyeColor => Color(eyeColorValue);
 
   Map<String, dynamic> toJson() => {
-        'season': season,
-        'undertone': undertone,
-        'brightness': brightness,
-        'skinColorValue': skinColorValue,
-        'hairColorValue': hairColorValue,
-        'eyeColorValue': eyeColorValue,
-        'selfiePath': selfiePath,
-        'analyzedAt': analyzedAt.toIso8601String(),
-      };
+    'season': season,
+    'undertone': undertone,
+    'brightness': brightness,
+    'skinColorValue': skinColorValue,
+    'hairColorValue': hairColorValue,
+    'eyeColorValue': eyeColorValue,
+    'selfiePath': selfiePath,
+    'analyzedAt': analyzedAt.toIso8601String(),
+  };
 
   factory UserColorProfile.fromJson(Map<String, dynamic> json) {
     return UserColorProfile(
@@ -108,7 +108,8 @@ class UserColorProfile {
     final eyeWarmth = _warmthScore(eyeColor);
 
     // Bobot: Kulit 50%, Rambut 25%, Mata 25%
-    final totalWarmth = (skinWarmth * 0.50) + (hairWarmth * 0.25) + (eyeWarmth * 0.25);
+    final totalWarmth =
+        (skinWarmth * 0.50) + (hairWarmth * 0.25) + (eyeWarmth * 0.25);
 
     // Threshold: > 0.5 = Warm, <= 0.5 = Cool
     final bool isWarm = totalWarmth > 0.5;
@@ -117,15 +118,36 @@ class UserColorProfile {
     // ── 2. Deteksi Kecerahan dari kulit ──
 
     final skinHsv = HSVColor.fromColor(skinColor);
-    final bool isLight = skinHsv.value >= 0.55;
+    final hairHsv = HSVColor.fromColor(hairColor);
+    final eyeHsv = HSVColor.fromColor(eyeColor);
+
+    // A. Kecerahan (Brightness): Rata-rata dari Value ketiga elemen
+    // Jika rata-rata Value tinggi, berarti secara keseluruhan orang tersebut "Light"
+    final double avgBrightness =
+        (skinHsv.value + hairHsv.value + eyeHsv.value) / 3.0;
+
+    // B. Tingkat Kontras: Seberapa beda kecerahan kulit terhadap rambut dan mata
+    // Kontras tinggi biasanya rambut gelap (value rendah) + kulit terang (value tinggi)
+    final double contrast =
+        (skinHsv.value - hairHsv.value).abs() +
+        (skinHsv.value - eyeHsv.value).abs();
+
+    // Threshold (Nilai Batas Heuristik)
+    // Jika cukup terang secara rata-rata, ATAU kontrasnya sangat rendah (pudar) -> Light
+    // Jika rata-rata gelap, ATAU kontrasnya sangat tinggi (tajam) -> Deep
+    final bool isLight = (avgBrightness >= 0.55) && (contrast < 0.85);
     final String brightness = isLight ? 'Light' : 'Deep';
 
     // ── 3. Tentukan Season ──
 
     String season;
     if (isWarm) {
+      // Warm + Light/Low Contrast = Spring
+      // Warm + Deep/High Contrast = Autumn
       season = isLight ? 'Spring' : 'Autumn';
     } else {
+      // Cool + Light/Low Contrast = Summer
+      // Cool + Deep/High Contrast = Winter
       season = isLight ? 'Summer' : 'Winter';
     }
 
