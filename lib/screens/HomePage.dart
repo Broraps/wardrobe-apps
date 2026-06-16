@@ -22,7 +22,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   final GlobalKey<RandomizerViewState> _randomizerKey = GlobalKey();
   late final TabController _tabController;
 
@@ -224,7 +225,7 @@ class RandomizerViewState extends State<RandomizerView>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Profil musim kulit belum diatur. ' 
+            'Profil musim kulit belum diatur. '
             'Buka Profil dan analisis kulit agar Perfect Match bekerja!',
           ),
           duration: Duration(seconds: 3),
@@ -812,6 +813,9 @@ class _CanvasViewState extends State<CanvasView> {
   final LookbookService _lookbookService = LookbookService();
   final List<_CanvasItemData> _canvasItems = [];
 
+  final GlobalKey _canvasKey = GlobalKey();
+  bool _isCapturing = false;
+
   // ── Buka bottom sheet untuk pilih item dari wardrobe ────────────────────
   Future<void> _showItemPicker() async {
     List<ClothingItem> wardrobeItems = [];
@@ -970,188 +974,199 @@ class _CanvasViewState extends State<CanvasView> {
   }
 
   // ── Decode gambar item ke ui.Image (untuk offscreen render) ────────────
-  Future<ui.Image> _decodeItemImage(ClothingItem item) async {
-    Uint8List bytes;
-    if (item.imageUrl.startsWith('http')) {
-      final uri = Uri.parse(item.imageUrl);
-      final client = HttpClient();
-      final request = await client.getUrl(uri);
-      final response = await request.close();
-      bytes = await consolidateHttpClientResponseBytes(response);
-      client.close();
-    } else {
-      bytes = await File(item.imageUrl).readAsBytes();
-    }
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    return frame.image;
-  }
+  // Future<ui.Image> _decodeItemImage(ClothingItem item) async {
+  //   Uint8List bytes;
+  //   if (item.imageUrl.startsWith('http')) {
+  //     final uri = Uri.parse(item.imageUrl);
+  //     final client = HttpClient();
+  //     final request = await client.getUrl(uri);
+  //     final response = await request.close();
+  //     bytes = await consolidateHttpClientResponseBytes(response);
+  //     client.close();
+  //   } else {
+  //     bytes = await File(item.imageUrl).readAsBytes();
+  //   }
+  //   final codec = await ui.instantiateImageCodec(bytes);
+  //   final frame = await codec.getNextFrame();
+  //   return frame.image;
+  // }
 
   /// Helper untuk membaca bytes dari HTTP response
-  static Future<Uint8List> consolidateHttpClientResponseBytes(
-      HttpClientResponse response) {
-    final chunks = <List<int>>[];
-    final completer = Completer<Uint8List>();
-    response.listen(
-      chunks.add,
-      onDone: () => completer.complete(
-        Uint8List.fromList(chunks.expand((c) => c).toList()),
-      ),
-      onError: completer.completeError,
-      cancelOnError: true,
-    );
-    return completer.future;
-  }
+  // static Future<Uint8List> consolidateHttpClientResponseBytes(
+  //   HttpClientResponse response,
+  // ) {
+  //   final chunks = <List<int>>[];
+  //   final completer = Completer<Uint8List>();
+  //   response.listen(
+  //     chunks.add,
+  //     onDone: () => completer.complete(
+  //       Uint8List.fromList(chunks.expand((c) => c).toList()),
+  //     ),
+  //     onError: completer.completeError,
+  //     cancelOnError: true,
+  //   );
+  //   return completer.future;
+  // }
 
-  // ── Capture canvas secara offscreen (memuat SEMUA item) ────────────────
-  Future<Uint8List> _captureCanvas() async {
-    const itemWidth = 120.0;
-    const itemHeight = 140.0;
-    const padding = 20.0;
-
-    // 1. Hitung bounding box semua item
-    double minX = double.infinity, minY = double.infinity;
-    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
-    for (final d in _canvasItems) {
-      if (d.position.dx < minX) minX = d.position.dx;
-      if (d.position.dy < minY) minY = d.position.dy;
-      if (d.position.dx + itemWidth > maxX) maxX = d.position.dx + itemWidth;
-      if (d.position.dy + itemHeight > maxY) maxY = d.position.dy + itemHeight;
-    }
-
-    final contentW = maxX - minX + padding * 2;
-    final contentH = maxY - minY + padding * 2;
-
-    // 2. Decode semua gambar ke PNG bytes
-    final decodedImageBytes = <Uint8List>[];
-    for (final d in _canvasItems) {
-      final uiImg = await _decodeItemImage(d.item);
-      final byteData = await uiImg.toByteData(format: ui.ImageByteFormat.png);
-      uiImg.dispose(); // Dispose ui.Image setelah dikonversi ke bytes
-      decodedImageBytes.add(byteData!.buffer.asUint8List());
-    }
-
-    // 3. Bangun render tree offscreen
-    final boundary = RenderRepaintBoundary();
-    final stack = RenderStack(textDirection: ui.TextDirection.ltr);
-    boundary.child = stack;
-
-    // Background (dengan ukuran eksplisit = ukuran canvas)
-    final bg = RenderConstrainedBox(
-      additionalConstraints: BoxConstraints.tightFor(
-        width: contentW,
-        height: contentH,
-      ),
-      child: RenderDecoratedBox(
-        decoration: BoxDecoration(color: Colors.grey.shade100),
-      ),
-    );
-    stack.add(bg);
-
-    // Items
-    for (int i = 0; i < _canvasItems.length; i++) {
-      final d = _canvasItems[i];
-      final relX = d.position.dx - minX + padding;
-      final relY = d.position.dy - minY + padding;
-
-      // Image (BoxFit.contain di dalam container putih)
-      final imageRender = RenderDecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          image: DecorationImage(
-            image: MemoryImage(decodedImageBytes[i]),
-            fit: BoxFit.contain,
-          ),
-        ),
-      );
-
-      // Label nama
-      final tp = TextPainter(
-        text: TextSpan(
-          text: d.item.name,
-          style: const TextStyle(color: Colors.white, fontSize: 10),
-        ),
-        textDirection: ui.TextDirection.ltr,
-        textAlign: TextAlign.center,
-        maxLines: 1,
-        ellipsis: '...',
-      )..layout(maxWidth: itemWidth);
-
-      final labelBg = RenderDecoratedBox(
-        decoration: const BoxDecoration(
-          color: Color(0x8A000000),
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
-        ),
-        child: RenderPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: RenderParagraph(tp.text!, textDirection: ui.TextDirection.ltr),
-        ),
-      );
-
-      // Stack item: image + label overlay
-      final itemStack = RenderStack(textDirection: ui.TextDirection.ltr);
-      itemStack.add(imageRender);
-
-      // Label di bawah (positioned bottom)
-      final labelPositioned = RenderPositionedBox(
-        alignment: Alignment.bottomCenter,
-        child: labelBg,
-      );
-      // Bungkus dalam Stack agar label overlay di bawah
-      final overlayStack = RenderStack(textDirection: ui.TextDirection.ltr);
-      overlayStack.add(itemStack);
-      overlayStack.add(labelPositioned);
-
-      // Border + shadow container
-      final borderedBox = RenderDecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: d.item.color, width: 2),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 6,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: RenderClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: overlayStack,
-        ),
-      );
-
-      // Positioned dalam canvas stack
-      final positioned = RenderPositionedBox(
-        alignment: Alignment.topLeft,
-        widthFactor: null,
-        heightFactor: null,
-        child: borderedBox,
-      );
-
-      // Add ke stack DULU, baru set offset (agar tidak ditimpa setupParentData)
-      stack.add(positioned);
-      final parentData = StackParentData();
-      parentData.offset = Offset(relX, relY);
-      positioned.parentData = parentData;
-    }
-
-    // 4. Layout + Paint
-    boundary.layout(
-      BoxConstraints.tightFor(width: contentW, height: contentH),
-    );
-    final offsetLayer = OffsetLayer();
-    boundary.paint(PaintingContext(offsetLayer, Rect.fromLTWH(0, 0, contentW, contentH)), Offset.zero);
-
-    // 5. Capture
-    final image = await boundary.toImage(pixelRatio: 2.0);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-
-    return byteData!.buffer.asUint8List();
-  }
+  // // ── Capture canvas secara offscreen (memuat SEMUA item) ────────────────
+  // Future<Uint8List> _captureCanvas() async {
+  //   const itemWidth = 120.0;
+  //   const itemHeight = 140.0;
+  //   const padding = 20.0;
+  //
+  //   // 1. Hitung bounding box semua item
+  //   double minX = double.infinity, minY = double.infinity;
+  //   double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+  //   for (final d in _canvasItems) {
+  //     if (d.position.dx < minX) minX = d.position.dx;
+  //     if (d.position.dy < minY) minY = d.position.dy;
+  //     if (d.position.dx + itemWidth > maxX) maxX = d.position.dx + itemWidth;
+  //     if (d.position.dy + itemHeight > maxY) maxY = d.position.dy + itemHeight;
+  //   }
+  //
+  //   final contentW = maxX - minX + padding * 2;
+  //   final contentH = maxY - minY + padding * 2;
+  //
+  //   // 2. Decode semua gambar ke PNG bytes
+  //   final decodedImageBytes = <Uint8List>[];
+  //   for (final d in _canvasItems) {
+  //     final uiImg = await _decodeItemImage(d.item);
+  //     final byteData = await uiImg.toByteData(format: ui.ImageByteFormat.png);
+  //     uiImg.dispose(); // Dispose ui.Image setelah dikonversi ke bytes
+  //     decodedImageBytes.add(byteData!.buffer.asUint8List());
+  //   }
+  //
+  //   // 3. Bangun render tree offscreen
+  //   final boundary = RenderRepaintBoundary();
+  //   final stack = RenderStack(textDirection: ui.TextDirection.ltr);
+  //   boundary.child = stack;
+  //
+  //   // Background (dengan ukuran eksplisit = ukuran canvas)
+  //   final bg = RenderConstrainedBox(
+  //     additionalConstraints: BoxConstraints.tightFor(
+  //       width: contentW,
+  //       height: contentH,
+  //     ),
+  //     child: RenderDecoratedBox(
+  //       decoration: BoxDecoration(color: Colors.grey.shade100),
+  //     ),
+  //   );
+  //   stack.add(bg);
+  //
+  //   // Items
+  //   for (int i = 0; i < _canvasItems.length; i++) {
+  //     final d = _canvasItems[i];
+  //     final relX = d.position.dx - minX + padding;
+  //     final relY = d.position.dy - minY + padding;
+  //
+  //     // Image (BoxFit.contain di dalam container putih)
+  //     final imageRender = RenderDecoratedBox(
+  //       decoration: BoxDecoration(
+  //         color: Colors.white,
+  //         borderRadius: BorderRadius.circular(8),
+  //         image: DecorationImage(
+  //           image: MemoryImage(decodedImageBytes[i]),
+  //           fit: BoxFit.contain,
+  //         ),
+  //       ),
+  //     );
+  //
+  //     // Label nama
+  //     final tp = TextPainter(
+  //       text: TextSpan(
+  //         text: d.item.name,
+  //         style: const TextStyle(color: Colors.white, fontSize: 10),
+  //       ),
+  //       textDirection: ui.TextDirection.ltr,
+  //       textAlign: TextAlign.center,
+  //       maxLines: 1,
+  //       ellipsis: '...',
+  //     )..layout(maxWidth: itemWidth);
+  //
+  //     final labelBg = RenderDecoratedBox(
+  //       decoration: const BoxDecoration(
+  //         color: Color(0x8A000000),
+  //         borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+  //       ),
+  //       child: RenderPadding(
+  //         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+  //         child: RenderParagraph(tp.text!, textDirection: ui.TextDirection.ltr),
+  //       ),
+  //     );
+  //
+  //     // Stack item: image + label overlay
+  //     final itemStack = RenderStack(textDirection: ui.TextDirection.ltr);
+  //     itemStack.add(imageRender);
+  //
+  //     // Label di bawah (positioned bottom)
+  //     final labelPositioned = RenderPositionedBox(
+  //       alignment: Alignment.bottomCenter,
+  //       child: labelBg,
+  //     );
+  //     // Bungkus dalam Stack agar label overlay di bawah
+  //     final overlayStack = RenderStack(textDirection: ui.TextDirection.ltr);
+  //     overlayStack.add(itemStack);
+  //     overlayStack.add(labelPositioned);
+  //
+  //     final labelParentData = labelPositioned.parentData as StackParentData;
+  //     labelParentData.bottom = 0.0;
+  //     labelParentData.left = 0.0;
+  //     labelParentData.right = 0.0;
+  //
+  //     // Border + shadow container
+  //     final borderedBox = RenderDecoratedBox(
+  //       decoration: BoxDecoration(
+  //         color: Colors.white,
+  //         borderRadius: BorderRadius.circular(10),
+  //         border: Border.all(color: d.item.color, width: 2),
+  //         boxShadow: const [
+  //           BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1),
+  //         ],
+  //       ),
+  //       child: RenderClipRRect(
+  //         borderRadius: BorderRadius.circular(8),
+  //         child: overlayStack,
+  //       ),
+  //     );
+  //
+  //     // Positioned dalam canvas stack
+  //     final positioned = RenderPositionedBox(
+  //       alignment: Alignment.topLeft,
+  //       widthFactor: null,
+  //       heightFactor: null,
+  //       child: borderedBox,
+  //     );
+  //
+  //     // Add ke stack DULU, baru set offset
+  //     stack.add(positioned);
+  //     final parentData = positioned.parentData as StackParentData;
+  //     parentData.left = relX;
+  //     parentData.top = relY;
+  //   }
+  //
+  //   // 4. Layout + Paint
+  //   final PipelineOwner owner = PipelineOwner();
+  //   owner.rootNode = boundary;
+  //
+  //   boundary.layout(BoxConstraints.tightFor(width: contentW, height: contentH));
+  //   owner.flushLayout();
+  //   owner.flushCompositingBits();
+  //   owner.flushPaint();
+  //
+  //   final offsetLayer = OffsetLayer();
+  //   final context = PaintingContext(
+  //     offsetLayer,
+  //     Rect.fromLTWH(0, 0, contentW, contentH),
+  //   );
+  //   context.paintChild(boundary, Offset.zero);
+  //
+  //   // 5. Capture
+  //   final image = await boundary.toImage(pixelRatio: 2.0);
+  //   final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+  //   image.dispose();
+  //
+  //   return byteData!.buffer.asUint8List();
+  // }
 
   // ── Simpan canvas ke Lookbook ─────────────────────────────────────────
   Future<void> _saveToLookbook() async {
@@ -1161,21 +1176,43 @@ class _CanvasViewState extends State<CanvasView> {
       );
       return;
     }
+    setState(() {
+      _isCapturing = true;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 50));
 
     // Capture gambar canvas (offscreen, mencakup semua item)
     Uint8List? capturedBytes;
     try {
-      capturedBytes = await _captureCanvas();
+      // 2. Ambil gambar utuh dari RepaintBoundary (seluruh area canvas)
+      RenderRepaintBoundary boundary =
+          _canvasKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+
+      // pixelRatio 2.0 atau 3.0 membuat gambar HD/tajam
+      ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+      ByteData? byteData = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      capturedBytes = byteData?.buffer.asUint8List();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal capture canvas: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal capture canvas: $e')));
       }
       return;
+    } finally {
+      // 3. Kembalikan tombol delete (X) terlepas dari berhasil/gagal
+      if (mounted) {
+        setState(() {
+          _isCapturing = false;
+        });
+      }
     }
 
-    if (!mounted) return;
+    if (!mounted || capturedBytes == null) return;
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -1206,42 +1243,46 @@ class _CanvasViewState extends State<CanvasView> {
       children: [
         // ── Canvas area ──
         Positioned.fill(
-          child: Stack(
-            children: [
-              // Latar Belakang Canvas
-              Container(color: Colors.grey.shade100),
+          child: RepaintBoundary(
+            key: _canvasKey,
+            child: Stack(
+              children: [
+                // Latar Belakang Canvas
+                Container(color: Colors.grey.shade100),
 
-              // Hint jika canvas kosong
-              if (_canvasItems.isEmpty)
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.gesture, size: 60, color: Colors.grey[300]),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Tekan "Add Item" untuk menambahkan\npakaian ke canvas',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 14,
+                // Hint jika canvas kosong
+                if (_canvasItems.isEmpty)
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.gesture, size: 60, color: Colors.grey[300]),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Tekan "Add Item" untuk menambahkan\npakaian ke canvas',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
 
-              // Item-item di canvas (bisa digeser)
-              for (int i = 0; i < _canvasItems.length; i++)
-                _CanvasItemWidget(
-                  key: ValueKey('${_canvasItems[i].item.id}_$i'),
-                  data: _canvasItems[i],
-                  onPositionChanged: (newPos) {
-                    _canvasItems[i].position = newPos;
-                  },
-                  onDelete: () => _removeFromCanvas(i),
-                ),
-            ],
+                // Item-item di canvas (bisa digeser)
+                for (int i = 0; i < _canvasItems.length; i++)
+                  _CanvasItemWidget(
+                    key: ValueKey('${_canvasItems[i].item.id}_$i'),
+                    data: _canvasItems[i],
+                    hideDeleteButton: _isCapturing,
+                    onPositionChanged: (newPos) {
+                      _canvasItems[i].position = newPos;
+                    },
+                    onDelete: () => _removeFromCanvas(i),
+                  ),
+              ],
+            ),
           ),
         ),
 

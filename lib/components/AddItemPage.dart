@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:palette_generator/palette_generator.dart';
+import 'package:palette_generator_master/palette_generator_master.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import 'package:path/path.dart' as p;
@@ -59,11 +59,12 @@ class _AddItemPageState extends State<AddItemPage> {
 
   // 2. FUNGSI CERDAS: DETEKSI WARNA (Palette Generator)
   Future<Color> _extractDominantColor(File image) async {
-    final PaletteGenerator generator = await PaletteGenerator.fromImageProvider(
-      FileImage(image),
-      size: const Size(200, 200), // Resize biar cepat prosesnya
-      maximumColorCount: 10,
-    );
+    final PaletteGeneratorMaster generator =
+        await PaletteGeneratorMaster.fromImageProvider(
+          FileImage(image),
+          size: const Size(200, 200), // Resize biar cepat prosesnya
+          maximumColorCount: 10,
+        );
 
     // Ambil warna dominan, kalau gagal ambil warna vibrant
     Color picked =
