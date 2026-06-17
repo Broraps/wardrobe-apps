@@ -11,42 +11,65 @@ class CatalogService {
 
   // SharedPreferences keys
   static const _galleryCloudIdsKey = 'gallery_cloud_ids';
-  static const _galleryCloudMetaKey = 'gallery_cloud_meta'; // metadata lengkap cloud items
+  static const _galleryCloudMetaKey =
+      'gallery_cloud_meta'; // metadata lengkap cloud items
   static const _localItemsKey = 'local_items';
 
-  // ── 1. CLOUD: List semua file dari Storage wardrobe_files ─────────────────
-  // Dipakai di CatalogPage (browse semua item cloud)
+  // ── 1. CLOUD: Mengambil data langsung dari TABEL catalog_items ─────────────────
   Future<List<ClothingItem>> fetchAllCloudItems() async {
     try {
-      // List semua file di bucket wardrobe_files
-      final files = await _supabase.storage.from(_storageBucket).list();
+      final List<dynamic> response = await _supabase
+          .from('catalog_items')
+          .select();
 
-      return files
-          .where((f) => f.name != '.emptyFolderPlaceholder') // skip placeholder
-          .map((f) {
-        // Generate public URL untuk file ini
-        final publicUrl = _supabase.storage
-            .from(_storageBucket)
-            .getPublicUrl(f.name);
+      return response.map((data) {
+        // --- Helper internal: Parse Hex ke Color (Sangat Aman) ---
+        String hexStr = data['hex_color']?.toString() ?? 'FFFFFF';
 
-        // Gunakan nama file (tanpa ekstensi) sebagai nama & ID
-        final nameWithoutExt = f.name.contains('.')
-            ? f.name.substring(0, f.name.lastIndexOf('.'))
-            : f.name;
+        // 1. Bersihkan semua simbol yang membuat Dart crash (#, 0x, atau 0X)
+        hexStr = hexStr
+            .replaceAll('#', '')
+            .replaceAll('0x', '')
+            .replaceAll('0X', '');
+
+        // 2. Jika panjangnya 6 karakter (hanya RGB), tambahkan FF di depan untuk Alpha (Opacity 100%)
+        if (hexStr.length == 6) {
+          hexStr = 'FF$hexStr';
+        }
+
+        // 3. Coba parse warnanya. Gunakan blok try-catch agar tidak merusak seluruh halaman jika 1 item gagal
+        Color parsedColor;
+        try {
+          parsedColor = Color(int.parse(hexStr, radix: 16));
+        } catch (e) {
+          debugPrint('Gagal parse warna untuk item ${data['name']}: $hexStr');
+          parsedColor = Colors
+              .grey
+              .shade400; // Warna cadangan jika database kosong/format salah
+        }
+        // ----------------------------------------------------------
+
+        // --- Helper internal: Kapitalisasi kategori ("top" menjadi "Top") ---
+        String rawCategory = data['category'] ?? 'Cloud';
+        String formattedCategory = rawCategory.isNotEmpty
+            ? rawCategory[0].toUpperCase() +
+                  rawCategory.substring(1).toLowerCase()
+            : 'Cloud';
+        // --------------------------------------------------------------------
 
         return ClothingItem(
-          id: f.name,           // nama file sebagai ID unik (cth: "nb 530.jpg")
-          name: nameWithoutExt, // nama tanpa ekstensi (cth: "nb 530")
-          category: 'Cloud',
-          color: Colors.blue.shade200,
-          imageUrl: publicUrl,
-          season: 'Unknown',
+          id: data['id'].toString(),
+          name: data['name'] ?? 'Unnamed',
+          category: formattedCategory,
+          color: parsedColor,
+          imageUrl: data['image_url'] ?? '',
+          season: data['season'] ?? 'Unknown',
           isLocal: false,
         );
       }).toList();
     } catch (e) {
-      debugPrint('Error fetching storage files: $e');
-      rethrow; // Biarkan caller menangani error dan menampilkan feedback ke user
+      debugPrint('Error fetching database catalog_items: $e');
+      rethrow;
     }
   }
 
@@ -62,7 +85,10 @@ class CatalogService {
   }
 
   /// Simpan cloud item ke gallery DENGAN metadata lengkap (kategori, warna, season)
-  Future<void> addCloudToGallery(String id, {required ClothingItem itemMeta}) async {
+  Future<void> addCloudToGallery(
+    String id, {
+    required ClothingItem itemMeta,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     // Simpan ID
     final currentIds = (prefs.getStringList(_galleryCloudIdsKey) ?? []).toSet();
@@ -97,15 +123,17 @@ class CatalogService {
     final List<dynamic> decoded = jsonDecode(jsonStr);
     return decoded
         .map((e) => ClothingItem.fromLocalJson(e as Map<String, dynamic>))
-        .map((item) => ClothingItem(
-              id: item.id,
-              name: item.name,
-              category: item.category,
-              color: item.color,
-              imageUrl: item.imageUrl,
-              season: item.season,
-              isLocal: false, // tetap cloud
-            ))
+        .map(
+          (item) => ClothingItem(
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            color: item.color,
+            imageUrl: item.imageUrl,
+            season: item.season,
+            isLocal: false, // tetap cloud
+          ),
+        )
         .toList();
   }
 
@@ -175,4 +203,3 @@ class CatalogService {
     }
   }
 }
-

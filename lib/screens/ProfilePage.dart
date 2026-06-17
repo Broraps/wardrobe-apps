@@ -82,9 +82,9 @@ class ProfilePageState extends State<ProfilePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan foto: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal menyimpan foto: $e')));
       }
     }
   }
@@ -164,9 +164,9 @@ class ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isAnalyzing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menganalisis: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal menganalisis: $e')));
       }
     }
   }
@@ -209,8 +209,7 @@ class ProfilePageState extends State<ProfilePage> {
             ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.deepPurple.shade100,
-                child:
-                    const Icon(Icons.camera_alt, color: Colors.deepPurple),
+                child: const Icon(Icons.camera_alt, color: Colors.deepPurple),
               ),
               title: const Text('Selfie (Kamera Depan)'),
               subtitle: const Text('Direkomendasikan'),
@@ -222,8 +221,10 @@ class ProfilePageState extends State<ProfilePage> {
             ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.deepPurple.shade100,
-                child: const Icon(Icons.photo_library,
-                    color: Colors.deepPurple),
+                child: const Icon(
+                  Icons.photo_library,
+                  color: Colors.deepPurple,
+                ),
               ),
               title: const Text('Pilih dari Galeri'),
               subtitle: const Text('Gunakan foto wajah yang sudah ada'),
@@ -257,8 +258,7 @@ class ProfilePageState extends State<ProfilePage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
-            child:
-                const Text('Reset', style: TextStyle(color: Colors.white)),
+            child: const Text('Reset', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -272,9 +272,9 @@ class ProfilePageState extends State<ProfilePage> {
         _profile = null;
         _selfieSavedPath = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profil berhasil di-reset')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profil berhasil di-reset')));
     }
   }
 
@@ -288,28 +288,28 @@ class ProfilePageState extends State<ProfilePage> {
       appBar: AppBar(
         title: const Text('Profil Warna'),
         centerTitle: false,
-        actions: [
-          if (_selfieSavedPath != null)
-            IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: 'Batal',
-              onPressed: () => setState(() => _selfieSavedPath = null),
-            ),
-          if (_profile != null && _selfieSavedPath == null)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Analisis Ulang',
-              onPressed: _showSelfieOptions,
-            ),
-        ],
+        // actions: [
+        //   if (_selfieSavedPath != null)
+        //     IconButton(
+        //       icon: const Icon(Icons.close),
+        //       tooltip: 'Batal',
+        //       onPressed: () => setState(() => _selfieSavedPath = null),
+        //     ),
+        //   if (_profile != null && _selfieSavedPath == null)
+        //     IconButton(
+        //       icon: const Icon(Icons.refresh),
+        //       tooltip: 'Analisis Ulang',
+        //       onPressed: _showSelfieOptions,
+        //     ),
+        // ],
       ),
       body: _isAnalyzing
           ? _buildAnalyzingState()
           : _selfieSavedPath != null
-              ? _buildColorPickingStep()
-              : _profile == null
-                  ? _buildEmptyState()
-                  : _buildProfileResult(),
+          ? _buildColorPickingStep()
+          : _profile == null
+          ? _buildEmptyState()
+          : _buildProfileResult(),
     );
   }
 
@@ -336,10 +336,7 @@ class ProfilePageState extends State<ProfilePage> {
             const SizedBox(height: 24),
             const Text(
               'Menganalisis Profil Warna...',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
@@ -377,10 +374,7 @@ class ProfilePageState extends State<ProfilePage> {
             const SizedBox(height: 24),
             const Text(
               'Seasonal Color Analysis',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
@@ -391,10 +385,7 @@ class ProfilePageState extends State<ProfilePage> {
               'menggunakan Seasonal Color Theory untuk menentukan '
               'profil warna musim Anda.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey[600],
-                height: 1.5,
-              ),
+              style: TextStyle(color: Colors.grey[600], height: 1.5),
             ),
             const SizedBox(height: 32),
             SizedBox(
@@ -423,7 +414,8 @@ class ProfilePageState extends State<ProfilePage> {
   // STEP 2: COLOR PICKING — user pick 3 warna dari foto
   // ═══════════════════════════════════════════════════════════════════════
   Widget _buildColorPickingStep() {
-    final allPicked = _pickedSkinColor != null &&
+    final allPicked =
+        _pickedSkinColor != null &&
         _pickedHairColor != null &&
         _pickedEyeColor != null;
 
@@ -465,8 +457,11 @@ class ProfilePageState extends State<ProfilePage> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline,
-                    size: 20, color: Colors.deepPurple),
+                const Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: Colors.deepPurple,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -586,7 +581,11 @@ class ProfilePageState extends State<ProfilePage> {
                   : Colors.grey.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 20, color: hasPicked ? accentColor : Colors.grey),
+            child: Icon(
+              icon,
+              size: 20,
+              color: hasPicked ? accentColor : Colors.grey,
+            ),
           ),
           const SizedBox(width: 12),
 
@@ -606,10 +605,7 @@ class ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[500],
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                 ),
               ],
             ),
@@ -636,16 +632,16 @@ class ProfilePageState extends State<ProfilePage> {
             height: 36,
             child: ElevatedButton.icon(
               onPressed: onPick,
-              icon: Icon(
-                hasPicked ? Icons.edit : Icons.colorize,
-                size: 14,
-              ),
+              icon: Icon(hasPicked ? Icons.edit : Icons.colorize, size: 14),
               label: Text(hasPicked ? 'Ubah' : 'Pick'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: hasPicked ? accentColor : Colors.deepPurple,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -684,8 +680,9 @@ class ProfilePageState extends State<ProfilePage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: (seasonData['color'] as Color)
-                          .withValues(alpha: 0.3),
+                      color: (seasonData['color'] as Color).withValues(
+                        alpha: 0.3,
+                      ),
                       blurRadius: 16,
                       spreadRadius: 2,
                     ),
@@ -697,8 +694,11 @@ class ProfilePageState extends State<ProfilePage> {
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
                       color: Colors.grey[200],
-                      child: const Icon(Icons.person,
-                          size: 60, color: Colors.grey),
+                      child: const Icon(
+                        Icons.person,
+                        size: 60,
+                        color: Colors.grey,
+                      ),
                     ),
                   ),
                 ),
@@ -708,7 +708,9 @@ class ProfilePageState extends State<ProfilePage> {
                 offset: const Offset(0, 14),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 6),
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: seasonData['color'] as Color,
                     borderRadius: BorderRadius.circular(20),
@@ -743,8 +745,7 @@ class ProfilePageState extends State<ProfilePage> {
               color: (seasonData['color'] as Color).withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color:
-                    (seasonData['color'] as Color).withValues(alpha: 0.2),
+                color: (seasonData['color'] as Color).withValues(alpha: 0.2),
               ),
             ),
             child: Column(
@@ -752,10 +753,7 @@ class ProfilePageState extends State<ProfilePage> {
                 Text(
                   'Berdasarkan analisis warna kulit, rambut,\ndan mata, profil Anda adalah:',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -775,10 +773,7 @@ class ProfilePageState extends State<ProfilePage> {
                 Text(
                   seasonData['description'] as String,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.grey[700],
-                    height: 1.5,
-                  ),
+                  style: TextStyle(color: Colors.grey[700], height: 1.5),
                 ),
               ],
             ),
@@ -799,10 +794,7 @@ class ProfilePageState extends State<ProfilePage> {
               children: [
                 const Text(
                   'Detail Analisis',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
                 const SizedBox(height: 12),
                 _detailRow(
@@ -850,8 +842,10 @@ class ProfilePageState extends State<ProfilePage> {
                 const Divider(height: 20),
                 _detailRow(
                   'Tanggal Analisis',
-                  DateFormat('d MMMM yyyy, HH:mm', 'id')
-                      .format(profile.analyzedAt),
+                  DateFormat(
+                    'd MMMM yyyy, HH:mm',
+                    'id',
+                  ).format(profile.analyzedAt),
                   icon: Icons.access_time,
                   iconColor: Colors.grey,
                 ),
@@ -874,10 +868,7 @@ class ProfilePageState extends State<ProfilePage> {
               children: [
                 const Text(
                   'Palet Warna yang Cocok',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -896,11 +887,9 @@ class ProfilePageState extends State<ProfilePage> {
                           decoration: BoxDecoration(
                             color: c,
                             borderRadius: BorderRadius.circular(8),
-                            border:
-                                Border.all(color: Colors.grey.shade300),
+                            border: Border.all(color: Colors.grey.shade300),
                             boxShadow: const [
-                              BoxShadow(
-                                  color: Colors.black12, blurRadius: 2),
+                              BoxShadow(color: Colors.black12, blurRadius: 2),
                             ],
                           ),
                         ),
@@ -982,10 +971,7 @@ class ProfilePageState extends State<ProfilePage> {
         trailing ??
             Text(
               value,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
       ],
     );
@@ -998,8 +984,8 @@ class ProfilePageState extends State<ProfilePage> {
       'emoji': '🌸',
       'description':
           'Tipe Spring memiliki undertone warm dengan kecerahan kulit cerah. '
-              'Warna-warna cerah dan hangat seperti coral, peach, dan kuning muda '
-              'sangat cocok untuk Anda.',
+          'Warna-warna cerah dan hangat seperti coral, peach, dan kuning muda '
+          'sangat cocok untuk Anda.',
       'palette': <Color>[
         const Color(0xFFFF7043), // Coral
         const Color(0xFFFFAB91), // Peach
@@ -1016,8 +1002,8 @@ class ProfilePageState extends State<ProfilePage> {
       'emoji': '☀️',
       'description':
           'Tipe Summer memiliki undertone cool dengan kecerahan kulit cerah. '
-              'Warna-warna lembut dan kalem seperti lavender, dusty rose, dan biru pastel '
-              'sangat cocok untuk Anda.',
+          'Warna-warna lembut dan kalem seperti lavender, dusty rose, dan biru pastel '
+          'sangat cocok untuk Anda.',
       'palette': <Color>[
         const Color(0xFFCE93D8), // Lavender
         const Color(0xFFF48FB1), // Dusty rose
@@ -1034,8 +1020,8 @@ class ProfilePageState extends State<ProfilePage> {
       'emoji': '🍂',
       'description':
           'Tipe Autumn memiliki undertone warm dengan kecerahan kulit deep. '
-              'Warna-warna earthy dan muted seperti burnt orange, olive, dan burgundy '
-              'sangat cocok untuk Anda.',
+          'Warna-warna earthy dan muted seperti burnt orange, olive, dan burgundy '
+          'sangat cocok untuk Anda.',
       'palette': <Color>[
         const Color(0xFFBF360C), // Burnt orange
         const Color(0xFF795548), // Cokelat
@@ -1052,8 +1038,8 @@ class ProfilePageState extends State<ProfilePage> {
       'emoji': '❄️',
       'description':
           'Tipe Winter memiliki undertone cool dengan kontras yang kuat. '
-              'Warna-warna bold dan kontras seperti hitam, putih, merah terang, dan biru royal '
-              'sangat cocok untuk Anda.',
+          'Warna-warna bold dan kontras seperti hitam, putih, merah terang, dan biru royal '
+          'sangat cocok untuk Anda.',
       'palette': <Color>[
         const Color(0xFF000000), // Hitam
         const Color(0xFFFFFFFF), // Putih

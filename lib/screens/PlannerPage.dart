@@ -78,14 +78,14 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Outfit Planner'),
-        actions: [
-          // Tombol refresh
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _loadLookbook,
-          ),
-        ],
+        // actions: [
+        //   // Tombol refresh
+        //   IconButton(
+        //     icon: const Icon(Icons.refresh),
+        //     tooltip: 'Refresh',
+        //     onPressed: _loadLookbook,
+        //   ),
+        // ],
       ),
       body: Column(
         children: [
@@ -183,10 +183,7 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
                     children: [
                       Text(
                         DateFormat('EEEE').format(day),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 13,
-                        ),
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
                       ),
                       Text(
                         DateFormat('d MMMM yyyy').format(day),
@@ -201,7 +198,9 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
                   if (isToday)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.deepPurple,
                         borderRadius: BorderRadius.circular(20),
@@ -222,9 +221,7 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
 
           // Jika tidak ada outfit untuk hari ini
           if (outfits.isEmpty)
-            SliverFillRemaining(
-              child: _buildEmptyDay(isPast),
-            )
+            SliverFillRemaining(child: _buildEmptyDay(isPast))
           else
             // List outfit yang dijadwalkan
             SliverPadding(
@@ -237,8 +234,7 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              LookbookDetailPage(item: outfits[i]),
+                          builder: (_) => LookbookDetailPage(item: outfits[i]),
                         ),
                       );
                       _loadLookbook();
@@ -296,7 +292,9 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
                   foregroundColor: Colors.deepPurple,
                   side: const BorderSide(color: Colors.deepPurple),
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 12),
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -348,7 +346,9 @@ class _OutfitPlanCard extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -382,10 +382,7 @@ class _OutfitPlanCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       'Dibuat ${DateFormat('d MMM yyyy').format(item.createdAt)}',
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 11,
-                      ),
+                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
                     ),
                   ],
                 ),

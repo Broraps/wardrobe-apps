@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import '../model/ClothingItem.dart';
 import '../services/CatalogService.dart';
-import '../utils/color_season_utils.dart';
 
-/// Halaman untuk browse semua item cloud dari Supabase.
-/// User bisa memilih item mana yang ingin ditambahkan ke gallery device ini.
 class CatalogPage extends StatefulWidget {
   const CatalogPage({super.key});
 
@@ -20,6 +17,26 @@ class _CatalogPageState extends State<CatalogPage> {
   Set<String> _galleryIds = {};
 
   bool _changed = false;
+
+  // ── Variabel Filtering, Sorting, & Search ──
+  String _searchQuery = '';
+  String _selectedStatus = 'Semua';
+  String _selectedCategory = 'Semua';
+  String _sortOrder = 'A-Z'; // Opsi: 'A-Z', 'Z-A'
+
+  static const List<String> _statusOptions = [
+    'Semua',
+    'Belum di Gallery',
+    'Sudah di Gallery',
+  ];
+
+  static const List<String> _categoryOptions = [
+    'Semua',
+    'Top',
+    'Bottom',
+    'Outer',
+    'Shoes',
+  ];
 
   @override
   void initState() {
@@ -37,9 +54,9 @@ class _CatalogPageState extends State<CatalogPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memuat katalog: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal memuat katalog: $e')));
       }
     }
   }
@@ -48,85 +65,25 @@ class _CatalogPageState extends State<CatalogPage> {
     final inGallery = _galleryIds.contains(item.id);
 
     if (inGallery) {
-      // Hapus dari gallery — langsung, tanpa dialog
       await _service.removeCloudFromGallery(item.id);
       setState(() => _galleryIds.remove(item.id));
       _changed = true;
       return;
     }
 
-    // ── Tambah ke gallery: minta user pilih kategori ──
-    final category = await _showCategoryPicker();
-    if (category == null) return; // user cancel
-
-    // Buat ClothingItem dengan metadata lengkap
-    final detectedSeason = guessSeasonFromColor(item.color);
-    final itemWithMeta = ClothingItem(
-      id: item.id,
-      name: item.name,
-      category: category,
-      color: item.color,
-      imageUrl: item.imageUrl,
-      season: detectedSeason,
-      isLocal: false,
-    );
-
-    await _service.addCloudToGallery(item.id, itemMeta: itemWithMeta);
+    await _service.addCloudToGallery(item.id, itemMeta: item);
     setState(() => _galleryIds.add(item.id));
     _changed = true;
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('"${item.name}" ditambahkan sebagai $category'),
+          content: Text('"${item.name}" ditambahkan ke gallery!'),
+          backgroundColor: Colors.deepPurple,
+          duration: const Duration(seconds: 1),
         ),
       );
     }
-  }
-
-  /// Dialog pilih kategori saat menambahkan cloud item ke gallery
-  Future<String?> _showCategoryPicker() async {
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Pilih Kategori'),
-        content: const Text(
-          'Tentukan kategori item ini agar bisa digunakan di Randomizer outfit.',
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        actions: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              _categoryButton(ctx, 'Top', Icons.checkroom),
-              _categoryButton(ctx, 'Bottom', Icons.accessibility_new),
-              _categoryButton(ctx, 'Outer', Icons.dry_cleaning),
-              _categoryButton(ctx, 'Shoes', Icons.ice_skating),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _categoryButton(BuildContext ctx, String category, IconData icon) {
-    return SizedBox(
-      width: 110,
-      child: ElevatedButton.icon(
-        onPressed: () => Navigator.pop(ctx, category),
-        icon: Icon(icon, size: 18),
-        label: Text(category),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.deepPurple,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-        ),
-      ),
-    );
   }
 
   @override
@@ -146,15 +103,23 @@ class _CatalogPageState extends State<CatalogPage> {
           ),
           title: const Text('Katalog Cloud'),
           actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Row(
-                children: [
-                  _LegendDot(color: Colors.blue.shade700, label: 'Belum di gallery'),
-                  const SizedBox(width: 12),
-                  _LegendDot(color: Colors.green.shade700, label: 'Sudah di gallery'),
-                ],
-              ),
+            // Tombol Sorting A-Z / Z-A
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.sort),
+              tooltip: 'Urutkan',
+              onSelected: (val) => setState(() => _sortOrder = val),
+              itemBuilder: (context) => [
+                CheckedPopupMenuItem(
+                  value: 'A-Z',
+                  checked: _sortOrder == 'A-Z',
+                  child: const Text('Nama (A - Z)'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'Z-A',
+                  checked: _sortOrder == 'Z-A',
+                  child: const Text('Nama (Z - A)'),
+                ),
+              ],
             ),
           ],
         ),
@@ -167,24 +132,171 @@ class _CatalogPageState extends State<CatalogPage> {
             if (_allCloudItems.isEmpty) {
               return const Center(child: Text('Tidak ada item di katalog.'));
             }
-            return GridView.builder(
-              padding: const EdgeInsets.all(10),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.75,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-              ),
-              itemCount: _allCloudItems.length,
-              itemBuilder: (context, index) {
-                final item = _allCloudItems[index];
-                final inGallery = _galleryIds.contains(item.id);
-                return _CatalogCard(
-                  item: item,
-                  inGallery: inGallery,
-                  onToggle: () => _toggleItem(item),
-                );
-              },
+
+            // ── LOGIKA FILTERING, SEARCH, & SORTING ──
+            var filteredItems = _allCloudItems.where((item) {
+              // 1. Filter Status
+              final inGallery = _galleryIds.contains(item.id);
+              bool passStatus = true;
+              if (_selectedStatus == 'Belum di Gallery')
+                passStatus = !inGallery;
+              if (_selectedStatus == 'Sudah di Gallery') passStatus = inGallery;
+
+              // 2. Filter Kategori
+              bool passCategory =
+                  _selectedCategory == 'Semua' ||
+                  item.category.toLowerCase() ==
+                      _selectedCategory.toLowerCase();
+
+              // 3. Search
+              bool passSearch = item.name.toLowerCase().contains(
+                _searchQuery.toLowerCase(),
+              );
+
+              return passStatus && passCategory && passSearch;
+            }).toList();
+
+            // 4. Sorting
+            filteredItems.sort((a, b) {
+              if (_sortOrder == 'A-Z') return a.name.compareTo(b.name);
+              return b.name.compareTo(a.name); // Z-A
+            });
+
+            return Column(
+              children: [
+                // ── Kotak Pencarian (Search Bar) ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Cari nama baju atau sepatu...',
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _searchQuery = val;
+                      });
+                    },
+                  ),
+                ),
+
+                // ── Filter Status (Gallery) ──
+                SizedBox(
+                  height: 50,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    itemCount: _statusOptions.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (ctx, i) {
+                      final label = _statusOptions[i];
+                      final isSelected = _selectedStatus == label;
+                      return FilterChip(
+                        selected: isSelected,
+                        label: Text(label),
+                        labelStyle: TextStyle(
+                          color: isSelected ? Colors.white : Colors.grey[700],
+                          fontSize: 12,
+                        ),
+                        selectedColor: Colors.deepPurple,
+                        backgroundColor: Colors.grey[200],
+                        showCheckmark: false,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        side: BorderSide.none,
+                        onSelected: (_) =>
+                            setState(() => _selectedStatus = label),
+                      );
+                    },
+                  ),
+                ),
+
+                // ── Filter Kategori Pakaian ──
+                SizedBox(
+                  height: 40,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 0,
+                    ),
+                    itemCount: _categoryOptions.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (ctx, i) {
+                      final label = _categoryOptions[i];
+                      final isSelected = _selectedCategory == label;
+                      return ChoiceChip(
+                        selected: isSelected,
+                        label: Text(label),
+                        labelStyle: TextStyle(
+                          color: isSelected
+                              ? Colors.deepPurple
+                              : Colors.grey[600],
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          fontSize: 12,
+                        ),
+                        selectedColor: Colors.deepPurple.withOpacity(0.1),
+                        backgroundColor: Colors.transparent,
+                        side: BorderSide(
+                          color: isSelected
+                              ? Colors.deepPurple
+                              : Colors.grey.shade300,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        onSelected: (_) =>
+                            setState(() => _selectedCategory = label),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // ── Grid View Item ──
+                Expanded(
+                  child: filteredItems.isEmpty
+                      ? Center(
+                          child: Text(
+                            'Item tidak ditemukan.',
+                            style: TextStyle(color: Colors.grey[500]),
+                          ),
+                        )
+                      : GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.75,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                              ),
+                          itemCount: filteredItems.length,
+                          itemBuilder: (context, index) {
+                            final item = filteredItems[index];
+                            final inGallery = _galleryIds.contains(item.id);
+                            return _CatalogCard(
+                              item: item,
+                              inGallery: inGallery,
+                              onToggle: () => _toggleItem(item),
+                            );
+                          },
+                        ),
+                ),
+              ],
             );
           },
         ),
@@ -193,7 +305,7 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 }
 
-// ── Kartu Item Katalog ────────────────────────────────────────────────────────
+// ── Kartu Item Katalog ──
 class _CatalogCard extends StatelessWidget {
   final ClothingItem item;
   final bool inGallery;
@@ -242,15 +354,10 @@ class _CatalogCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 subtitle: Text(item.category),
-                trailing: CircleAvatar(
-                  backgroundColor: item.color,
-                  radius: 10,
-                ),
+                trailing: CircleAvatar(backgroundColor: item.color, radius: 10),
               ),
             ],
           ),
-
-          // Badge status gallery
           Positioned(
             top: 8,
             left: 8,
@@ -281,8 +388,6 @@ class _CatalogCard extends StatelessWidget {
               ),
             ),
           ),
-
-          // Tombol tambah/hapus dari gallery
           Positioned(
             top: 4,
             right: 4,
@@ -305,29 +410,6 @@ class _CatalogCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ── Legend dot helper ─────────────────────────────────────────────────────────
-class _LegendDot extends StatelessWidget {
-  final Color color;
-  final String label;
-  const _LegendDot({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 10)),
-      ],
     );
   }
 }
