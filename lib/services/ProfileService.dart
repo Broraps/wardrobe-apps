@@ -100,6 +100,9 @@ class UserColorProfile {
     required Color hairColor,
     required Color eyeColor,
     required String selfiePath,
+    double skinWeight = 0.50,
+    double hairWeight = 0.25,
+    double eyeWeight = 0.25,
   }) {
     // ── 1. Hitung warmth score per komponen (0.0 = Cool, 1.0 = Warm) ──
 
@@ -107,9 +110,9 @@ class UserColorProfile {
     final hairWarmth = _warmthScore(hairColor);
     final eyeWarmth = _warmthScore(eyeColor);
 
-    // Bobot: Kulit 50%, Rambut 25%, Mata 25%
+    // Bobot: ditentukan oleh parameter (default: Kulit 50%, Rambut 25%, Mata 25%)
     final totalWarmth =
-        (skinWarmth * 0.50) + (hairWarmth * 0.25) + (eyeWarmth * 0.25);
+        (skinWarmth * skinWeight) + (hairWarmth * hairWeight) + (eyeWarmth * eyeWeight);
 
     // Threshold: > 0.5 = Warm, <= 0.5 = Cool
     final bool isWarm = totalWarmth > 0.5;

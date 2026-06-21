@@ -29,6 +29,98 @@ class ProfilePageState extends State<ProfilePage> {
   Color? _pickedHairColor;
   Color? _pickedEyeColor;
 
+  // ── Bobot analisis (dinamis, default: Kulit 50%, Rambut 25%, Mata 25%) ──
+  double _skinWeight = 0.50;
+  double _hairWeight = 0.25;
+  double _eyeWeight = 0.25;
+
+  // Minimum bobot per komponen
+  static const double _minWeight = 0.05;
+
+  /// Atur bobot kulit — sisanya dibagi ke rambut & mata
+  /// Constraint: skin > hair >= eye, total = 100%
+  void _setSkinWeight(double newSkin) {
+    newSkin = (newSkin * 20).round() / 20; // snap ke 5%
+    newSkin = newSkin.clamp(_minWeight, 0.90);
+
+    double remaining = 1.0 - newSkin;
+
+    // Bagi sisa proporsional ke hair dan eye
+    double oldHairEye = _hairWeight + _eyeWeight;
+    double newHair, newEye;
+    if (oldHairEye > 0) {
+      newHair = remaining * (_hairWeight / oldHairEye);
+      newEye = remaining * (_eyeWeight / oldHairEye);
+    } else {
+      newHair = remaining / 2;
+      newEye = remaining / 2;
+    }
+
+    // Snap & clamp
+    newHair = ((newHair * 20).round() / 20).clamp(_minWeight, 1.0);
+    newEye = ((newEye * 20).round() / 20).clamp(_minWeight, 1.0);
+
+    // Pastikan hair >= eye
+    if (newHair < newEye) {
+      final avg = (newHair + newEye) / 2;
+      newHair = ((avg * 20).ceil() / 20).clamp(_minWeight, 1.0);
+      newEye = ((avg * 20).floor() / 20).clamp(_minWeight, 1.0);
+    }
+
+    // Koreksi agar total = 1.0
+    newEye = ((1.0 - newSkin - newHair) * 20).round() / 20;
+    newEye = newEye.clamp(_minWeight, 1.0);
+
+    // Pastikan skin > hair
+    if (newSkin <= newHair) return; // tolak perubahan
+    // Pastikan hair >= eye
+    if (newHair < newEye) return;
+
+    setState(() {
+      _skinWeight = newSkin;
+      _hairWeight = newHair;
+      _eyeWeight = newEye;
+    });
+  }
+
+  /// Atur bobot rambut — eye disesuaikan
+  void _setHairWeight(double newHair) {
+    newHair = (newHair * 20).round() / 20;
+    newHair = newHair.clamp(_minWeight, 0.90);
+
+    // hair harus < skin
+    if (newHair >= _skinWeight) return;
+
+    double newEye = ((1.0 - _skinWeight - newHair) * 20).round() / 20;
+    newEye = newEye.clamp(_minWeight, 1.0);
+
+    // hair harus >= eye
+    if (newHair < newEye) return;
+
+    setState(() {
+      _hairWeight = newHair;
+      _eyeWeight = newEye;
+    });
+  }
+
+  /// Atur bobot mata — hair disesuaikan
+  void _setEyeWeight(double newEye) {
+    newEye = (newEye * 20).round() / 20;
+    newEye = newEye.clamp(_minWeight, 0.90);
+
+    double newHair = ((1.0 - _skinWeight - newEye) * 20).round() / 20;
+    newHair = newHair.clamp(_minWeight, 1.0);
+
+    // skin > hair >= eye
+    if (newHair >= _skinWeight) return;
+    if (newHair < newEye) return;
+
+    setState(() {
+      _eyeWeight = newEye;
+      _hairWeight = newHair;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -140,6 +232,9 @@ class ProfilePageState extends State<ProfilePage> {
         hairColor: _pickedHairColor!,
         eyeColor: _pickedEyeColor!,
         selfiePath: _selfieSavedPath!,
+        skinWeight: _skinWeight,
+        hairWeight: _hairWeight,
+        eyeWeight: _eyeWeight,
       );
 
       await _profileService.saveProfile(profile);
@@ -505,6 +600,10 @@ class ProfilePageState extends State<ProfilePage> {
             onPick: () => _pickColorFor('eye'),
             accentColor: Colors.blue.shade600,
           ),
+          const SizedBox(height: 16),
+
+          // ── Pengaturan Bobot Analisis ──
+          _buildWeightSliders(),
           const SizedBox(height: 24),
 
           // ── Tombol Analisis ──
@@ -650,6 +749,188 @@ class ProfilePageState extends State<ProfilePage> {
           ),
         ],
       ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // WEIGHT SLIDERS — Pengaturan bobot analisis
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildWeightSliders() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.deepPurple.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+          leading: Icon(
+            Icons.tune,
+            size: 20,
+            color: Colors.deepPurple.shade400,
+          ),
+          title: const Text(
+            'Pengaturan Bobot',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          subtitle: Text(
+            'Kulit ${(_skinWeight * 100).round()}% · '
+            'Rambut ${(_hairWeight * 100).round()}% · '
+            'Mata ${(_eyeWeight * 100).round()}%',
+            style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+          ),
+          children: [
+            // Penjelasan
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.amber.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.amber[800]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Total harus 100%. Aturan: Kulit > Rambut ≥ Mata.\n'
+                      'Slider lain akan menyesuaikan otomatis.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[700],
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Slider Kulit
+            _buildWeightSliderRow(
+              label: 'Nuansa Kulit',
+              icon: Icons.face,
+              accentColor: Colors.orange.shade700,
+              value: _skinWeight,
+              onChanged: _setSkinWeight,
+            ),
+            const SizedBox(height: 8),
+
+            // Slider Rambut
+            _buildWeightSliderRow(
+              label: 'Warna Rambut',
+              icon: Icons.content_cut,
+              accentColor: Colors.brown.shade600,
+              value: _hairWeight,
+              onChanged: _setHairWeight,
+            ),
+            const SizedBox(height: 8),
+
+            // Slider Mata
+            _buildWeightSliderRow(
+              label: 'Warna Mata',
+              icon: Icons.visibility,
+              accentColor: Colors.blue.shade600,
+              value: _eyeWeight,
+              onChanged: _setEyeWeight,
+            ),
+            const SizedBox(height: 8),
+
+            // Tombol Reset bobot
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _skinWeight = 0.50;
+                    _hairWeight = 0.25;
+                    _eyeWeight = 0.25;
+                  });
+                },
+                icon: const Icon(Icons.restart_alt, size: 16),
+                label: const Text('Reset Default', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.deepPurple,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeightSliderRow({
+    required String label,
+    required IconData icon,
+    required Color accentColor,
+    required double value,
+    required ValueChanged<double> onChanged,
+  }) {
+    final percent = (value * 100).round();
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: accentColor),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: 85,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[700],
+            ),
+          ),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              activeTrackColor: accentColor,
+              inactiveTrackColor: accentColor.withValues(alpha: 0.15),
+              thumbColor: accentColor,
+              overlayColor: accentColor.withValues(alpha: 0.12),
+            ),
+            child: Slider(
+              value: value,
+              min: _minWeight,
+              max: 0.90,
+              divisions: 17, // (0.90 - 0.05) / 0.05 = 17
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        Container(
+          width: 42,
+          alignment: Alignment.centerRight,
+          child: Text(
+            '$percent%',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: accentColor,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
