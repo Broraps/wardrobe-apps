@@ -14,6 +14,7 @@ import '../services/CatalogService.dart';
 import '../services/LookbookService.dart';
 import '../services/ProfileService.dart';
 import '../services/SmartStylistService.dart';
+import 'ChatScreen.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -69,6 +70,19 @@ class HomePageState extends State<HomePage>
           const CanvasView(), // Sub-halaman 1.2
         ],
       ),
+      // // ── FAB: Tanya AI ──
+      // floatingActionButton: FloatingActionButton.extended(
+      //   onPressed: () {
+      //     Navigator.push(
+      //       context,
+      //       MaterialPageRoute(builder: (_) => const ChatScreen()),
+      //     );
+      //   },
+      //   icon: const Icon(Icons.auto_awesome, size: 20),
+      //   label: const Text('Tanya AI'),
+      //   backgroundColor: Colors.deepPurple,
+      //   foregroundColor: Colors.white,
+      // ),
     );
   }
 }

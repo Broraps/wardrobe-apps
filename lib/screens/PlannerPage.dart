@@ -6,6 +6,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../model/LookbookItem.dart';
 import '../services/LookbookService.dart';
+import 'ChatScreen.dart';
 import 'LookbookPage.dart';
 
 class PlannerPage extends StatefulWidget {
@@ -145,6 +146,18 @@ class PlannerPageState extends State<PlannerPage> with WidgetsBindingObserver {
                 : _buildDayContent(_selectedDay!),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ChatScreen()),
+          );
+        },
+        icon: const Icon(Icons.auto_awesome, size: 20),
+        label: const Text('Tanya AI'),
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
       ),
     );
   }
